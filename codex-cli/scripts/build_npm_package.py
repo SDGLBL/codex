@@ -246,28 +246,59 @@ def copy_native_binaries(vendor_src: Path, staging_dir: Path, components: list[s
         shutil.rmtree(vendor_dest)
     vendor_dest.mkdir(parents=True, exist_ok=True)
 
-    for target_dir in vendor_src.iterdir():
+    copied_targets: list[str] = []
+    missing_by_target: dict[str, list[str]] = {}
+
+    for target_dir in sorted(vendor_src.iterdir()):
         if not target_dir.is_dir():
             continue
 
-        dest_target_dir = vendor_dest / target_dir.name
-        dest_target_dir.mkdir(parents=True, exist_ok=True)
+        missing_components: list[str] = []
+        present_components: list[tuple[str, Path]] = []
 
-        for component in components_set:
+        for component in sorted(components_set):
             dest_dir_name = COMPONENT_DEST_DIR.get(component)
             if dest_dir_name is None:
                 continue
 
             src_component_dir = target_dir / dest_dir_name
-            if not src_component_dir.exists():
-                raise RuntimeError(
-                    f"Missing native component '{component}' in vendor source: {src_component_dir}"
-                )
+            if src_component_dir.exists():
+                present_components.append((dest_dir_name, src_component_dir))
+                continue
 
+            missing_components.append(component)
+
+        if missing_components:
+            missing_by_target[target_dir.name] = missing_components
+            continue
+
+        dest_target_dir = vendor_dest / target_dir.name
+        dest_target_dir.mkdir(parents=True, exist_ok=True)
+
+        for dest_dir_name, src_component_dir in present_components:
             dest_component_dir = dest_target_dir / dest_dir_name
             if dest_component_dir.exists():
                 shutil.rmtree(dest_component_dir)
             shutil.copytree(src_component_dir, dest_component_dir)
+
+        copied_targets.append(target_dir.name)
+
+    if not copied_targets:
+        missing_details = "; ".join(
+            f"{target}: {', '.join(sorted(components))}"
+            for target, components in sorted(missing_by_target.items())
+        )
+        raise RuntimeError(
+            "No native binaries were copied from the vendor directory; "
+            f"missing components by target: {missing_details or 'unknown'}"
+        )
+
+    if missing_by_target:
+        for target, components in sorted(missing_by_target.items()):
+            components_str = ", ".join(sorted(components))
+            print(
+                f"Skipping native binaries for {target}; missing components: {components_str}"
+            )
 
 
 def run_npm_pack(staging_dir: Path, output_path: Path) -> Path:

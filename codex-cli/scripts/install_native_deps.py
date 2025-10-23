@@ -19,6 +19,7 @@ from urllib.request import urlopen
 SCRIPT_DIR = Path(__file__).resolve().parent
 CODEX_CLI_ROOT = SCRIPT_DIR.parent
 DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
+DEFAULT_REPO_SLUG = "openai/codex"
 VENDOR_DIR_NAME = "vendor"
 RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
 BINARY_TARGETS = (
@@ -107,12 +108,12 @@ def main() -> int:
     if not workflow_url:
         workflow_url = DEFAULT_WORKFLOW_URL
 
-    workflow_id = workflow_url.rstrip("/").split("/")[-1]
-    print(f"Downloading native artifacts from workflow {workflow_id}...")
+    repo_slug, workflow_id = parse_workflow_reference(workflow_url)
+    print(f"Downloading native artifacts from {repo_slug} workflow {workflow_id}...")
 
     with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
         artifacts_dir = Path(artifacts_dir_str)
-        _download_artifacts(workflow_id, artifacts_dir)
+        _download_artifacts(repo_slug, workflow_id, artifacts_dir)
         install_binary_components(
             artifacts_dir,
             vendor_dir,
@@ -189,7 +190,27 @@ def fetch_rg(
     return [results[target] for target in targets]
 
 
-def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
+def parse_workflow_reference(workflow_url: str) -> tuple[str, str]:
+    """Return (repo_slug, run_id) for the given workflow reference."""
+
+    parsed = urlparse(workflow_url)
+
+    if parsed.scheme and parsed.netloc:
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) >= 5 and path_parts[2] == "actions" and path_parts[3] == "runs":
+            repo_slug = f"{path_parts[0]}/{path_parts[1]}"
+            run_id = path_parts[4]
+            if repo_slug and run_id:
+                return repo_slug, run_id
+        raise ValueError(f"Unable to parse workflow URL: {workflow_url}")
+
+    run_id = workflow_url.rstrip("/").split("/")[-1]
+    if not run_id:
+        raise ValueError(f"Unable to determine workflow run ID from: {workflow_url}")
+    return DEFAULT_REPO_SLUG, run_id
+
+
+def _download_artifacts(repo_slug: str, workflow_id: str, dest_dir: Path) -> None:
     cmd = [
         "gh",
         "run",
@@ -197,7 +218,7 @@ def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
         "--dir",
         str(dest_dir),
         "--repo",
-        "openai/codex",
+        repo_slug,
         workflow_id,
     ]
     subprocess.check_call(cmd)
@@ -223,6 +244,7 @@ def install_binary_components(
             + ", ".join(targets)
         )
         max_workers = min(len(targets), max(1, (os.cpu_count() or 1)))
+        missing_targets: list[str] = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
@@ -235,8 +257,33 @@ def install_binary_components(
                 for target in targets
             }
             for future in as_completed(futures):
-                installed_path = future.result()
+                target = futures[future]
+                try:
+                    installed_path = future.result()
+                except MissingArtifactError as exc:
+                    print(f"  skipping {target}: {exc}")
+                    missing_targets.append(target)
+                    continue
                 print(f"  installed {installed_path}")
+        if missing_targets:
+            missing_targets_set = set(missing_targets)
+            missing_targets_str = ", ".join(sorted(missing_targets_set))
+            print(
+                f"⚠️  Missing {component.binary_basename} artifacts for targets: {missing_targets_str}"
+            )
+            if len(missing_targets_set) == len(targets):
+                raise RuntimeError(
+                    f"No artifacts were found for {component.binary_basename}; "
+                    "ensure the build workflow produced the expected binaries."
+                )
+
+
+class MissingArtifactError(FileNotFoundError):
+    def __init__(self, component: BinaryComponent, target: str, archive_path: Path):
+        self.component = component
+        self.target = target
+        self.archive_path = archive_path
+        super().__init__(f"Expected artifact not found: {archive_path}")
 
 
 def _install_single_binary(
@@ -249,7 +296,7 @@ def _install_single_binary(
     archive_name = _archive_name_for_target(component.artifact_prefix, target)
     archive_path = artifact_subdir / archive_name
     if not archive_path.exists():
-        raise FileNotFoundError(f"Expected artifact not found: {archive_path}")
+        raise MissingArtifactError(component, target, archive_path)
 
     dest_dir = vendor_dir / target / component.dest_dir
     dest_dir.mkdir(parents=True, exist_ok=True)
