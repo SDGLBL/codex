@@ -253,6 +253,7 @@ impl Codex {
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
     conversation_id: ConversationId,
+    wire_session_id: ConversationId,
     tx_event: Sender<Event>,
     state: Mutex<SessionState>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
@@ -380,12 +381,36 @@ pub(crate) struct SessionSettingsUpdate {
 }
 
 impl Session {
+    fn wire_session_id_for_history(
+        initial_history: &InitialHistory,
+        conversation_id: ConversationId,
+    ) -> ConversationId {
+        fn wire_from_items(items: &[RolloutItem]) -> Option<ConversationId> {
+            items.iter().find_map(|item| {
+                if let RolloutItem::SessionMeta(meta) = item {
+                    meta.meta.wire_session_id
+                } else {
+                    None
+                }
+            })
+        }
+
+        match initial_history {
+            InitialHistory::New => conversation_id,
+            InitialHistory::Resumed(resumed_history) => {
+                wire_from_items(&resumed_history.history).unwrap_or(resumed_history.conversation_id)
+            }
+            InitialHistory::Forked(items) => wire_from_items(items).unwrap_or(conversation_id),
+        }
+    }
+
     fn make_turn_context(
         auth_manager: Option<Arc<AuthManager>>,
         otel_event_manager: &OtelEventManager,
         provider: ModelProviderInfo,
         session_configuration: &SessionConfiguration,
         conversation_id: ConversationId,
+        wire_session_id: ConversationId,
         sub_id: String,
     ) -> TurnContext {
         let config = session_configuration.original_config_do_not_use.clone();
@@ -413,6 +438,7 @@ impl Session {
             session_configuration.model_reasoning_effort,
             session_configuration.model_reasoning_summary,
             conversation_id,
+            wire_session_id,
             session_configuration.session_source.clone(),
         );
 
@@ -458,21 +484,22 @@ impl Session {
             ));
         }
 
-        let (conversation_id, rollout_params) = match &initial_history {
-            InitialHistory::New | InitialHistory::Forked(_) => {
-                let conversation_id = ConversationId::default();
-                (
-                    conversation_id,
-                    RolloutRecorderParams::new(
-                        conversation_id,
-                        session_configuration.user_instructions.clone(),
-                        session_source,
-                    ),
-                )
+        let conversation_id = match &initial_history {
+            InitialHistory::New | InitialHistory::Forked(_) => ConversationId::default(),
+            InitialHistory::Resumed(resumed_history) => resumed_history.conversation_id,
+        };
+
+        let wire_session_id = Self::wire_session_id_for_history(&initial_history, conversation_id);
+
+        let rollout_params = match &initial_history {
+            InitialHistory::Resumed(resumed_history) => {
+                RolloutRecorderParams::resume(resumed_history.rollout_path.clone())
             }
-            InitialHistory::Resumed(resumed_history) => (
-                resumed_history.conversation_id,
-                RolloutRecorderParams::resume(resumed_history.rollout_path.clone()),
+            _ => RolloutRecorderParams::new(
+                conversation_id,
+                wire_session_id,
+                session_configuration.user_instructions.clone(),
+                session_source,
             ),
         };
 
@@ -608,6 +635,7 @@ impl Session {
 
         let sess = Arc::new(Session {
             conversation_id,
+            wire_session_id,
             tx_event: tx_event.clone(),
             state: Mutex::new(state),
             active_turn: Mutex::new(None),
@@ -754,6 +782,7 @@ impl Session {
             session_configuration.provider.clone(),
             &session_configuration,
             self.conversation_id,
+            self.wire_session_id,
             sub_id,
         );
         if let Some(final_schema) = updates.final_output_json_schema {
@@ -849,6 +878,7 @@ impl Session {
             auth_manager,
             &otel,
             self.conversation_id,
+            self.wire_session_id,
             turn_context.client.get_session_source(),
             call_id,
             command,
@@ -1749,6 +1779,7 @@ async fn spawn_review_thread(
         per_turn_config.model_reasoning_effort,
         per_turn_config.model_reasoning_summary,
         sess.conversation_id,
+        sess.wire_session_id,
         parent_turn_context.client.get_session_source(),
     );
 
@@ -2378,6 +2409,9 @@ mod tests {
     use crate::protocol::CompactedItem;
     use crate::protocol::InitialHistory;
     use crate::protocol::ResumedHistory;
+    use crate::protocol::SessionMeta;
+    use crate::protocol::SessionMetaLine;
+    use crate::protocol::SessionSource;
     use crate::state::TaskKind;
     use crate::tasks::SessionTask;
     use crate::tasks::SessionTaskContext;
@@ -2445,6 +2479,29 @@ mod tests {
             session.state.lock().await.clone_history().get_history()
         });
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn wire_session_id_for_forked_history_prefers_source_id() {
+        let base_conversation_id = ConversationId::new();
+        let fork_conversation_id = ConversationId::new();
+        let session_meta = SessionMetaLine {
+            meta: SessionMeta {
+                id: fork_conversation_id,
+                wire_session_id: Some(base_conversation_id),
+                timestamp: String::new(),
+                cwd: PathBuf::new(),
+                originator: String::new(),
+                cli_version: String::new(),
+                instructions: None,
+                source: SessionSource::Cli,
+                model_provider: None,
+            },
+            git: None,
+        };
+        let history = InitialHistory::Forked(vec![RolloutItem::SessionMeta(session_meta)]);
+        let wire_id = Session::wire_session_id_for_history(&history, fork_conversation_id);
+        assert_eq!(wire_id, base_conversation_id);
     }
 
     #[test]
@@ -2623,11 +2680,13 @@ mod tests {
             session_configuration.provider.clone(),
             &session_configuration,
             conversation_id,
+            conversation_id,
             "turn_id".to_string(),
         );
 
         let session = Session {
             conversation_id,
+            wire_session_id: conversation_id,
             tx_event,
             state: Mutex::new(state),
             active_turn: Mutex::new(None),
@@ -2699,11 +2758,13 @@ mod tests {
             session_configuration.provider.clone(),
             &session_configuration,
             conversation_id,
+            conversation_id,
             "turn_id".to_string(),
         ));
 
         let session = Arc::new(Session {
             conversation_id,
+            wire_session_id: conversation_id,
             tx_event,
             state: Mutex::new(state),
             active_turn: Mutex::new(None),

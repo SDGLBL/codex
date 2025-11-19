@@ -289,6 +289,9 @@ pub(crate) struct ResponsesApiRequest<'a> {
     pub(crate) prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) text: Option<TextControls>,
+    // Support pass max_output_tokens to avoid the incompleted issue
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) max_output_tokens: Option<i64>,
 }
 
 pub(crate) mod tools {
@@ -472,6 +475,7 @@ mod tests {
                 verbosity: Some(OpenAiVerbosity::Low),
                 format: None,
             }),
+            max_output_tokens: Some(10_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");
@@ -510,6 +514,7 @@ mod tests {
             include: vec![],
             prompt_cache_key: None,
             text: Some(text_controls),
+            max_output_tokens: Some(10_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");
@@ -546,6 +551,7 @@ mod tests {
             include: vec![],
             prompt_cache_key: None,
             text: None,
+            max_output_tokens: Some(10_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");

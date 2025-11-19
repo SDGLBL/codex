@@ -1074,6 +1074,8 @@ pub enum SubAgentSource {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
 pub struct SessionMeta {
     pub id: ConversationId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wire_session_id: Option<ConversationId>,
     pub timestamp: String,
     pub cwd: PathBuf,
     pub originator: String,
@@ -1088,6 +1090,7 @@ impl Default for SessionMeta {
     fn default() -> Self {
         SessionMeta {
             id: ConversationId::default(),
+            wire_session_id: None,
             timestamp: String::new(),
             cwd: PathBuf::new(),
             originator: String::new(),

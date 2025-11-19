@@ -587,6 +587,7 @@ async fn test_tail_includes_last_response_items() -> Result<()> {
         item: RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: conversation_id,
+                wire_session_id: Some(conversation_id),
                 timestamp: ts.to_string(),
                 instructions: None,
                 cwd: ".".into(),
@@ -680,6 +681,7 @@ async fn test_tail_handles_short_sessions() -> Result<()> {
         item: RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: conversation_id,
+                wire_session_id: Some(conversation_id),
                 timestamp: ts.to_string(),
                 instructions: None,
                 cwd: ".".into(),
@@ -774,6 +776,7 @@ async fn test_tail_skips_trailing_non_responses() -> Result<()> {
         item: RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: conversation_id,
+                wire_session_id: Some(conversation_id),
                 timestamp: ts.to_string(),
                 instructions: None,
                 cwd: ".".into(),

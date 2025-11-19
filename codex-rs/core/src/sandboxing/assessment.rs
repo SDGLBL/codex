@@ -44,6 +44,7 @@ pub(crate) async fn assess_command(
     auth_manager: Arc<AuthManager>,
     parent_otel: &OtelEventManager,
     conversation_id: ConversationId,
+    wire_session_id: ConversationId,
     session_source: SessionSource,
     call_id: &str,
     command: &[String],
@@ -133,6 +134,7 @@ pub(crate) async fn assess_command(
         config.model_reasoning_effort,
         config.model_reasoning_summary,
         conversation_id,
+        wire_session_id,
         session_source,
     );
 

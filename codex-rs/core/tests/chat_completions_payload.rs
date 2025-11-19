@@ -90,6 +90,7 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         effort,
         summary,
         conversation_id,
+        conversation_id,
         codex_protocol::protocol::SessionSource::Exec,
     );
 

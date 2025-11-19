@@ -86,6 +86,7 @@ pub struct ModelClient {
     client: CodexHttpClient,
     provider: ModelProviderInfo,
     conversation_id: ConversationId,
+    wire_session_id: ConversationId,
     effort: Option<ReasoningEffortConfig>,
     summary: ReasoningSummaryConfig,
     session_source: SessionSource,
@@ -101,6 +102,7 @@ impl ModelClient {
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
         conversation_id: ConversationId,
+        wire_session_id: ConversationId,
         session_source: SessionSource,
     ) -> Self {
         let client = create_client();
@@ -112,6 +114,7 @@ impl ModelClient {
             client,
             provider,
             conversation_id,
+            wire_session_id,
             effort,
             summary,
             session_source,
@@ -259,6 +262,7 @@ impl ModelClient {
             include,
             prompt_cache_key: Some(self.conversation_id.to_string()),
             text,
+            max_output_tokens: self.config.model_max_output_tokens,
         };
 
         let mut payload_json = serde_json::to_value(&payload)?;
@@ -328,10 +332,14 @@ impl ModelClient {
 
         req_builder = req_builder
             // Send session_id for compatibility.
-            .header("conversation_id", self.conversation_id.to_string())
-            .header("session_id", self.conversation_id.to_string())
+            .header("conversation_id", self.wire_session_id.to_string())
+            .header("session_id", self.wire_session_id.to_string())
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .json(payload_json);
+
+        let wire_session_header =
+            serde_json::json!({ "session_id": self.wire_session_id.to_string() }).to_string();
+        req_builder = req_builder.header("extra", wire_session_header);
 
         if let Some(auth) = auth.as_ref()
             && auth.mode == AuthMode::ChatGPT
