@@ -166,6 +166,7 @@ mod tests {
         let session_meta = SessionMetaLine {
             meta: SessionMeta {
                 id: thread_id,
+                wire_session_id: Some(thread_id),
                 forked_from_id: None,
                 timestamp: TEST_TIMESTAMP.to_string(),
                 cwd: std::path::PathBuf::from("."),
