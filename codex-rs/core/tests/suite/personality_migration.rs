@@ -60,6 +60,7 @@ async fn write_rollout_with_user_event(dir: &Path, thread_id: ThreadId) -> io::R
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
             id: thread_id,
+            wire_session_id: Some(thread_id),
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),
@@ -104,6 +105,7 @@ async fn write_rollout_with_meta_only(dir: &Path, thread_id: ThreadId) -> io::Re
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
             id: thread_id,
+            wire_session_id: Some(thread_id),
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),

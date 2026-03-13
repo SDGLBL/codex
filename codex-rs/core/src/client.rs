@@ -122,6 +122,7 @@ pub fn ws_version_from_features(config: &Config) -> bool {
 struct ModelClientState {
     auth_manager: Option<Arc<AuthManager>>,
     conversation_id: ThreadId,
+    wire_session_id: ThreadId,
     provider: ModelProviderInfo,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
@@ -216,6 +217,7 @@ impl ModelClient {
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         provider: ModelProviderInfo,
         session_source: SessionSource,
         model_verbosity: Option<VerbosityConfig>,
@@ -228,6 +230,7 @@ impl ModelClient {
             state: Arc::new(ModelClientState {
                 auth_manager,
                 conversation_id,
+                wire_session_id,
                 provider,
                 session_source,
                 model_verbosity,
@@ -302,7 +305,7 @@ impl ModelClient {
 
         let mut extra_headers = self.build_subagent_headers();
         extra_headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
+            self.state.wire_session_id.to_string(),
         )));
         client
             .compact_input(&payload, extra_headers)
@@ -453,7 +456,7 @@ impl ModelClient {
             turn_metadata_header.as_ref(),
         );
         headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
+            self.state.wire_session_id.to_string(),
         )));
         headers.insert(
             OPENAI_BETA_HEADER,
@@ -1274,9 +1277,11 @@ mod tests {
             "https://example.com/v1",
             crate::model_provider_info::WireApi::Responses,
         );
+        let conversation_id = ThreadId::new();
         ModelClient::new(
             None,
-            ThreadId::new(),
+            conversation_id,
+            conversation_id,
             provider,
             session_source,
             None,

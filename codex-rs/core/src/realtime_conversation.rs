@@ -299,9 +299,10 @@ pub(crate) async fn handle_start(
     };
     let model = config.experimental_realtime_ws_model.clone();
 
-    let requested_session_id = params
-        .session_id
-        .or_else(|| Some(sess.conversation_id.to_string()));
+    let requested_session_id = match params.session_id {
+        Some(session_id) => Some(session_id),
+        None => Some(sess.wire_session_id().await.to_string()),
+    };
     let extra_headers =
         realtime_request_headers(requested_session_id.as_deref(), realtime_api_key.as_str())?;
     info!("starting realtime conversation");
