@@ -1,0 +1,64 @@
+name: track-upstream-stable
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */4 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  dispatch:
+    if: github.repository == 'SDGLBL/codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve latest upstream stable tag
+        id: upstream
+        run: |
+          set -euo pipefail
+          echo "tag=$(scripts/internal/latest_upstream_stable.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing sync state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          internal_tag="internal-${UPSTREAM_TAG}"
+          sync_branch="sync/${UPSTREAM_TAG}"
+          tag_exists=false
+          pr_exists=false
+
+          if git ls-remote --tags origin "${internal_tag}" | grep -q .; then
+            tag_exists=true
+          fi
+
+          if [[ "$(gh pr list --base main --head "${sync_branch}" --state open --json number --jq 'length')" != "0" ]]; then
+            pr_exists=true
+          fi
+
+          echo "internal_tag=${internal_tag}" >> "$GITHUB_OUTPUT"
+          echo "sync_branch=${sync_branch}" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=${tag_exists}" >> "$GITHUB_OUTPUT"
+          echo "pr_exists=${pr_exists}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch sync PR workflow
+        if: steps.state.outputs.tag_exists != 'true' && steps.state.outputs.pr_exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run prepare-sync-pr.yml --ref main -f upstream_tag="${UPSTREAM_TAG}"
