@@ -24,6 +24,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         session_source,
         None,
         false,
+        None,
         false,
         None,
     )
