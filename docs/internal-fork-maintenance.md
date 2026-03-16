@@ -4,7 +4,7 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 
 ## Branches
 - `main`: current internal stable line. Every merge should correspond to one validated upstream stable release plus the internal patch stack.
-- `patches/internal`: long-lived linear patch stack. Keep it branch-only and rebase it when the internal feature set changes.
+- `patches/internal`: non-executing cold backup and audit line for fork-only deltas. The sync automation no longer replays it directly, but we keep it as an independent record of internal patches in case `main` ever drops one accidentally.
 - `sync/rust-vX.Y.Z`: per-release integration branch created from fork `main`, then updated by merging the upstream `rust-vX.Y.Z` tag into that stable line.
 - `archive/main-pre-sync-2026-03-13`: backup branch that preserves the pre-sync fork state before the first large resync.
 - The patch stack should stay rooted at the current internal stable line.
@@ -76,10 +76,11 @@ git push fork internal-rust-v0.114.0
 ```
 
 ## Patch Stack Rules
-- Keep the patch stack linear and cherry-pick friendly.
-- Split product behavior changes from CI/docs changes.
-- Avoid mixing upstream version bumps from `rust-vX.Y.Z` alignment into the long-lived patch stack. Those belong to the release-sync branch, not to `patches/internal`.
-- When you add new fork-only behavior directly on `main`, immediately mirror it into `patches/internal`. The sync workflow now merges from `main`, but `patches/internal` remains the long-lived audit trail for internal deltas.
+- Treat `patches/internal` as a backup ledger, not as the executing source for sync automation.
+- Keep the recorded internal deltas linear enough to inspect and recover from if `main` loses an internal change.
+- Split product behavior changes from CI/docs changes when practical so the backup line stays readable.
+- Avoid mixing upstream version bumps from `rust-vX.Y.Z` alignment into that backup line. Those belong to the release-sync branch, not to `patches/internal`.
+- When you add new fork-only behavior directly on `main`, mirror it into `patches/internal` soon after so the cold-backup line stays useful.
 
 ## Conflict Resolution
 - When the sync workflow reports a merge conflict, look for the `sync/rust-vX.Y.Z` PR and pull it locally with `gh pr checkout <pr-number> -R SDGLBL/codex`.
