@@ -639,6 +639,7 @@ stream_max_retries = 0
     std::fs::create_dir_all(rollout_dir)?;
     let session_meta = SessionMeta {
         id: conversation_id,
+        wire_session_id: Some(conversation_id),
         forked_from_id: None,
         timestamp: "2025-01-05T12:00:00Z".to_string(),
         cwd: repo_path.clone(),

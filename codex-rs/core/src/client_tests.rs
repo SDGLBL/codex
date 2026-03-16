@@ -42,9 +42,11 @@ use tempfile::TempDir;
 
 fn test_model_client(session_source: SessionSource) -> ModelClient {
     let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
+    let conversation_id = ThreadId::new();
     ModelClient::new(
         /*auth_manager*/ None,
-        ThreadId::new(),
+        conversation_id,
+        conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
         session_source,
