@@ -71,6 +71,7 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -249,6 +250,7 @@ async fn metadata_irrelevant_events_touch_state_db_updated_at() -> std::io::Resu
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
+            thread_id,
             thread_id,
             /*forked_from_id*/ None,
             SessionSource::Cli,

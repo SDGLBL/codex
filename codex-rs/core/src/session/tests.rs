@@ -346,10 +346,12 @@ async fn interrupting_regular_turn_waiting_on_startup_prewarm_emits_turn_aborted
 }
 
 fn test_model_client_session() -> crate::client::ModelClientSession {
+    let conversation_id = ThreadId::try_from("00000000-0000-4000-8000-000000000001")
+        .expect("test thread id should be valid");
     crate::client::ModelClient::new(
         /*auth_manager*/ None,
-        ThreadId::try_from("00000000-0000-4000-8000-000000000001")
-            .expect("test thread id should be valid"),
+        conversation_id,
+        conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         ModelProviderInfo::create_openai_provider(/* base_url */ /*base_url*/ None),
         codex_protocol::protocol::SessionSource::Exec,
@@ -2318,6 +2320,7 @@ async fn set_rate_limits_retains_previous_credits() {
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -2423,6 +2426,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -2678,6 +2682,7 @@ async fn attach_rollout_recorder(session: &Arc<Session>) -> PathBuf {
         config.as_ref(),
         RolloutRecorderParams::new(
             session.conversation_id,
+            session.wire_session_id().await,
             /*forked_from_id*/ None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -2778,6 +2783,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3048,6 +3054,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3152,6 +3159,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3237,6 +3245,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         ),
         model_client: ModelClient::new(
             Some(auth_manager.clone()),
+            conversation_id,
             conversation_id,
             /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
             session_configuration.provider.clone(),
@@ -4255,6 +4264,7 @@ where
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4340,6 +4350,7 @@ where
         ),
         model_client: ModelClient::new(
             Some(Arc::clone(&auth_manager)),
+            conversation_id,
             conversation_id,
             /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
             session_configuration.provider.clone(),
@@ -5456,6 +5467,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
         config.as_ref(),
         RolloutRecorderParams::new(
             ThreadId::default(),
+            ThreadId::default(),
             /*forked_from_id*/ None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -5602,6 +5614,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
+            ThreadId::default(),
             ThreadId::default(),
             /*forked_from_id*/ None,
             SessionSource::Exec,
