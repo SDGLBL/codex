@@ -86,15 +86,11 @@ jobs:
   # --- CI to validate on different os/targets --------------------------------
   lint_build:
     name: Lint/Build — ${{ matrix.runner }} - ${{ matrix.target }}${{ matrix.profile == 'release' && ' (release)' || '' }}
-    runs-on: ${{ github.repository == 'openai/codex' && (matrix.runs_on || matrix.runner) || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
     needs: changed
     # Keep job-level if to avoid spinning up runners when not needed
-    if: >-
-      ${{
-        (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push')
-        && (github.repository == 'openai/codex' || matrix.fork_enabled == true)
-      }}
+    if: ${{ (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push') && github.repository == 'openai/codex' }}
     defaults:
       run:
         working-directory: codex-rs
@@ -125,7 +121,6 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             profile: dev
-            fork_enabled: true
             runs_on:
               group: codex-runners
               labels: codex-linux-x64
@@ -457,14 +452,10 @@ jobs:
 
   tests:
     name: Tests — ${{ matrix.runner }} - ${{ matrix.target }}
-    runs-on: ${{ github.repository == 'openai/codex' && (matrix.runs_on || matrix.runner) || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
     needs: changed
-    if: >-
-      ${{
-        (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push')
-        && (github.repository == 'openai/codex' || matrix.fork_enabled == true)
-      }}
+    if: ${{ (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push') && github.repository == 'openai/codex' }}
     defaults:
       run:
         working-directory: codex-rs
@@ -484,7 +475,6 @@ jobs:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             profile: dev
-            fork_enabled: true
             runs_on:
               group: codex-runners
               labels: codex-linux-x64
@@ -664,20 +654,91 @@ jobs:
           echo "Tests failed. See logs for details."
           exit 1
 
+  lint_build_fork:
+    name: Lint/Build — fork - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: changed
+    if: ${{ (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push') && github.repository != 'openai/codex' }}
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          components: clippy
+      - name: cargo clippy
+        run: cargo clippy --locked --all-features --tests -- -D warnings
+
+  tests_fork:
+    name: Tests — fork - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: changed
+    if: ${{ (needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push') && github.repository != 'openai/codex' }}
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Node.js for js_repl tests
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: codex-rs/node-version.txt
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+      - name: Install DotSlash
+        uses: facebook/install-dotslash@v2
+      - uses: dtolnay/rust-toolchain@1.93.0
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        with:
+          tool: nextest
+          version: 0.9.103
+      - name: Enable unprivileged user namespaces (Linux)
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: tests
+        run: cargo nextest run --locked --all-features --no-fail-fast --cargo-profile ci-test --timings
+        env:
+          RUST_BACKTRACE: 1
+          NEXTEST_STATUS_LEVEL: leak
+
   # --- Gatherer job that you mark as the ONLY required status -----------------
   results:
     name: CI results (required)
-    needs: [changed, general, cargo_shear, lint_build, tests]
+    needs: [changed, general, cargo_shear, lint_build, tests, lint_build_fork, tests_fork]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Summarize
         shell: bash
         run: |
+          if [[ '${{ github.repository }}' == 'openai/codex' ]]; then
+            lint_result='${{ needs.lint_build.result }}'
+            tests_result='${{ needs.tests.result }}'
+          else
+            lint_result='${{ needs.lint_build_fork.result }}'
+            tests_result='${{ needs.tests_fork.result }}'
+          fi
+
           echo "general: ${{ needs.general.result }}"
           echo "shear  : ${{ needs.cargo_shear.result }}"
-          echo "lint   : ${{ needs.lint_build.result }}"
-          echo "tests  : ${{ needs.tests.result }}"
+          echo "lint   : ${lint_result}"
+          echo "tests  : ${tests_result}"
 
           # If nothing relevant changed (PR touching only root README, etc.),
           # declare success regardless of other jobs.
@@ -689,8 +750,8 @@ jobs:
           # Otherwise require the jobs to have succeeded
           [[ '${{ needs.general.result }}' == 'success' ]] || { echo 'general failed'; exit 1; }
           [[ '${{ needs.cargo_shear.result }}' == 'success' ]] || { echo 'cargo_shear failed'; exit 1; }
-          [[ '${{ needs.lint_build.result }}' == 'success' ]] || { echo 'lint_build failed'; exit 1; }
-          [[ '${{ needs.tests.result }}' == 'success' ]] || { echo 'tests failed'; exit 1; }
+          [[ "${lint_result}" == 'success' ]] || { echo 'lint_build failed'; exit 1; }
+          [[ "${tests_result}" == 'success' ]] || { echo 'tests failed'; exit 1; }
 
       - name: sccache summary note
         if: always()
