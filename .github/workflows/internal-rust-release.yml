@@ -231,13 +231,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git remote get-url upstream >/dev/null 2>&1; then
-            git remote set-url upstream https://github.com/openai/codex
-          else
-            git remote add upstream https://github.com/openai/codex
-          fi
           git fetch origin patches/internal
-          git fetch upstream main
 
           notes_path="${RUNNER_TEMP}/release-notes.md"
           {
@@ -246,7 +240,7 @@ jobs:
             echo "## Patch Stack"
             while read -r commit; do
               git log -1 --format='- `%h` %s' "${commit}"
-            done < <(scripts/internal/patch_stack_commits.sh origin/patches/internal upstream/main)
+            done < <(scripts/internal/patch_stack_commits.sh origin/patches/internal HEAD)
           } > "${notes_path}"
           echo "path=${notes_path}" >> "$GITHUB_OUTPUT"
 

@@ -12,7 +12,11 @@ fork_remote="${FORK_REMOTE:-origin}"
 fork_repo="${FORK_REPO:-}"
 fork_url="${FORK_URL:-}"
 base_branch="${BASE_BRANCH:-main}"
-patch_base_ref="${PATCH_BASE_REF:-${upstream_tag}}"
+# The patch stack should be computed against the current internal stable line,
+# not the target upstream tag. Upstream release tags do not necessarily form a
+# linear ancestry chain, so comparing against the new tag can accidentally pull
+# in unrelated upstream commits as "patches".
+patch_base_ref="${PATCH_BASE_REF:-${fork_remote}/${base_branch}}"
 sync_branch="${SYNC_BRANCH:-sync/${upstream_tag}}"
 patch_branch="${PATCH_BRANCH:-${fork_remote}/patches/internal}"
 upstream_remote="${UPSTREAM_REMOTE:-upstream}"

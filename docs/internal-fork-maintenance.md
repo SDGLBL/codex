@@ -7,7 +7,9 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 - `patches/internal`: long-lived linear patch stack. Keep it branch-only and rebase it when the internal feature set changes.
 - `sync/rust-vX.Y.Z`: per-release integration branch created from the upstream `rust-vX.Y.Z` tag and populated by cherry-picking `patches/internal`.
 - `archive/main-pre-sync-2026-03-13`: backup branch that preserves the pre-sync fork state before the first large resync.
-- The patch stack should stay rooted at the upstream stable release lineage, and the sync helper computes patch commits relative to the target `rust-vX.Y.Z` tag by default.
+- The patch stack should stay rooted at the current internal stable line.
+- The sync helper computes patch commits relative to fork `main`, not the new upstream `rust-vX.Y.Z` tag.
+- This avoids accidentally replaying unrelated upstream commits when release tags do not form a simple linear ancestry chain.
 
 ## Tags And Releases
 - Upstream source of truth: `openai/codex` stable `rust-v*` releases.
