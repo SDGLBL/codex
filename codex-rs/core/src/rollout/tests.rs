@@ -1095,6 +1095,7 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
         item: RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: conversation_id,
+                wire_session_id: Some(conversation_id),
                 forked_from_id: None,
                 timestamp: ts.to_string(),
                 cwd: ".".into(),
