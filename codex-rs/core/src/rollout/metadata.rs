@@ -473,6 +473,7 @@ mod tests {
         let session_meta = SessionMeta {
             id,
             forked_from_id: None,
+            wire_session_id: Some(id),
             timestamp: "2026-01-27T12:34:56Z".to_string(),
             cwd: dir.path().to_path_buf(),
             originator: "cli".to_string(),
@@ -524,6 +525,7 @@ mod tests {
         let session_meta = SessionMeta {
             id,
             forked_from_id: None,
+            wire_session_id: Some(id),
             timestamp: "2026-01-27T12:34:56Z".to_string(),
             cwd: dir.path().to_path_buf(),
             originator: "cli".to_string(),
@@ -795,6 +797,7 @@ mod tests {
         let session_meta = SessionMeta {
             id,
             forked_from_id: None,
+            wire_session_id: Some(id),
             timestamp: event_ts.to_string(),
             cwd,
             originator: "cli".to_string(),

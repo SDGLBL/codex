@@ -79,6 +79,7 @@ pub struct RolloutRecorder {
 pub enum RolloutRecorderParams {
     Create {
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         source: SessionSource,
         base_instructions: BaseInstructions,
@@ -108,6 +109,7 @@ enum RolloutCmd {
 impl RolloutRecorderParams {
     pub fn new(
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         source: SessionSource,
         base_instructions: BaseInstructions,
@@ -116,6 +118,7 @@ impl RolloutRecorderParams {
     ) -> Self {
         Self::Create {
             conversation_id,
+            wire_session_id,
             forked_from_id,
             source,
             base_instructions,
@@ -377,6 +380,7 @@ impl RolloutRecorder {
             match params {
                 RolloutRecorderParams::Create {
                     conversation_id,
+                    wire_session_id,
                     forked_from_id,
                     source,
                     base_instructions,
@@ -398,6 +402,7 @@ impl RolloutRecorder {
 
                     let session_meta = SessionMeta {
                         id: session_id,
+                        wire_session_id: Some(wire_session_id),
                         forked_from_id,
                         timestamp,
                         cwd: config.cwd.clone(),
@@ -1168,6 +1173,7 @@ mod tests {
             &config,
             RolloutRecorderParams::new(
                 thread_id,
+                thread_id,
                 None,
                 SessionSource::Exec,
                 BaseInstructions::default(),
@@ -1267,6 +1273,7 @@ mod tests {
         let recorder = RolloutRecorder::new(
             &config,
             RolloutRecorderParams::new(
+                thread_id,
                 thread_id,
                 None,
                 SessionSource::Cli,
