@@ -15,9 +15,11 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         "https://example.com/v1",
         crate::model_provider_info::WireApi::Responses,
     );
+    let conversation_id = ThreadId::new();
     ModelClient::new(
         None,
-        ThreadId::new(),
+        conversation_id,
+        conversation_id,
         provider,
         session_source,
         None,
