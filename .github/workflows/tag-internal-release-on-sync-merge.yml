@@ -1,0 +1,64 @@
+name: tag-internal-release-on-sync-merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: >-
+      github.repository == 'SDGLBL/codex' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'sync/rust-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create internal release tag
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          upstream_tag="${HEAD_REF#sync/}"
+          merge_sha="${MERGE_SHA}"
+
+          if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
+            echo "unexpected upstream tag format from head ref: ${HEAD_REF}" >&2
+            exit 1
+          fi
+
+          if [[ -z "${merge_sha}" ]]; then
+            echo "merge commit SHA is missing for merged PR" >&2
+            exit 1
+          fi
+
+          internal_tag="internal-${upstream_tag}"
+
+          if git fetch --quiet origin "refs/tags/${internal_tag}:refs/tags/${internal_tag}"; then
+            existing_sha="$(git rev-list -n1 "${internal_tag}")"
+            if [[ "${existing_sha}" == "${merge_sha}" ]]; then
+              echo "tag ${internal_tag} already points at ${merge_sha}; nothing to do"
+              exit 0
+            fi
+
+            echo "tag ${internal_tag} already exists at ${existing_sha}, expected ${merge_sha}" >&2
+            exit 1
+          fi
+
+          git tag -a "${internal_tag}" "${merge_sha}" -m "Internal release for ${upstream_tag}"
+          git push origin "refs/tags/${internal_tag}"
