@@ -25,9 +25,16 @@ jobs:
 
       - name: Resolve latest upstream stable tag
         id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo "tag=$(scripts/internal/latest_upstream_stable.sh)" >> "$GITHUB_OUTPUT"
+          tag="$(scripts/internal/latest_upstream_stable.sh)"
+          [[ -n "${tag}" ]] || {
+            echo "failed to resolve upstream stable tag" >&2
+            exit 1
+          }
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Check existing sync state
         id: state
