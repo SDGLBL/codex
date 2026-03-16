@@ -16,6 +16,8 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 - Fork-only internal release tags: `internal-rust-vX.Y.Z`.
 - GitHub Release name: `X.Y.Z-internal`.
 - Release notes must include both the upstream tag and the current patch stack commit SHAs.
+- Standard path: merge `sync/rust-vX.Y.Z` into `main`, let the tag workflow create `internal-rust-vX.Y.Z`, then let `internal-rust-release.yml` publish the release.
+- Manual fallback: if the auto-tag workflow is disabled or fails after the merge, create and push `internal-rust-vX.Y.Z` yourself to trigger the same release workflow.
 
 ## Automation
 - `.github/workflows/track-upstream-stable.yml`
@@ -32,6 +34,11 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
   - Supports manual dry-runs with `workflow_dispatch`.
   - Publishes GitHub Releases only for `internal-rust-v*` tag pushes.
   - Stages CLI binaries, proxy binaries, installer scripts, and `config.schema.json`.
+- `.github/workflows/tag-internal-release-on-sync-merge.yml`
+  - Runs when a `sync/rust-vX.Y.Z` PR is merged into `main`.
+  - Creates `internal-rust-vX.Y.Z` on the merge commit.
+  - Leaves the tag untouched if it already points at that same merge commit, and fails loudly if the tag already exists on a different commit.
+  - The pushed tag triggers `internal-rust-release.yml`.
 
 ## Local Setup
 - The automation assumes the fork is available as a git remote, but it does not require `origin` to point at the fork.
@@ -62,6 +69,10 @@ gh pr checkout <pr-number> -R SDGLBL/codex
 
 # Trigger a dry-run build for the internal release workflow.
 gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-v0.114.0
+
+# Manual fallback if the auto-tag workflow did not create the release tag.
+git tag internal-rust-v0.114.0 <merge-commit-sha>
+git push fork internal-rust-v0.114.0
 ```
 
 ## Patch Stack Rules
@@ -80,6 +91,7 @@ gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-v
   git merge --no-ff rust-vX.Y.Z
   ```
 - Resolve the conflicts, stage your fixes, remove `SYNC_CONFLICTS.md`, then finish with `git commit` and `git push`.
+- After the sync PR is reviewed and merged into `main`, the tag workflow should automatically create `internal-rust-vX.Y.Z` and kick off the release build.
 - For sync PRs created by the older cherry-pick-based workflow, you may need one extra `git merge fork/main` after the replay is done so GitHub sees the PR branch as mergeable.
 
 ## Rollback
