@@ -8695,6 +8695,7 @@ mod tests {
 
         let session_meta = SessionMeta {
             id: conversation_id,
+            wire_session_id: Some(conversation_id),
             timestamp: timestamp.clone(),
             model_provider: None,
             ..SessionMeta::default()
@@ -8751,6 +8752,7 @@ mod tests {
 
         let session_meta = SessionMeta {
             id: conversation_id,
+            wire_session_id: Some(conversation_id),
             timestamp: timestamp.clone(),
             source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,

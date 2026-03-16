@@ -30,12 +30,13 @@ async fn extract_metadata_from_rollout_uses_session_meta() {
         .path()
         .join(format!("rollout-2026-01-27T12-34-56-{uuid}.jsonl"));
 
-    let session_meta = SessionMeta {
-        id,
-        forked_from_id: None,
-        timestamp: "2026-01-27T12:34:56Z".to_string(),
-        cwd: dir.path().to_path_buf(),
-        originator: "cli".to_string(),
+        let session_meta = SessionMeta {
+            id,
+            forked_from_id: None,
+            wire_session_id: Some(id),
+            timestamp: "2026-01-27T12:34:56Z".to_string(),
+            cwd: dir.path().to_path_buf(),
+            originator: "cli".to_string(),
         cli_version: "0.0.0".to_string(),
         source: SessionSource::default(),
         agent_nickname: None,
@@ -80,12 +81,13 @@ async fn extract_metadata_from_rollout_returns_latest_memory_mode() {
         .path()
         .join(format!("rollout-2026-01-27T12-34-56-{uuid}.jsonl"));
 
-    let session_meta = SessionMeta {
-        id,
-        forked_from_id: None,
-        timestamp: "2026-01-27T12:34:56Z".to_string(),
-        cwd: dir.path().to_path_buf(),
-        originator: "cli".to_string(),
+        let session_meta = SessionMeta {
+            id,
+            forked_from_id: None,
+            wire_session_id: Some(id),
+            timestamp: "2026-01-27T12:34:56Z".to_string(),
+            cwd: dir.path().to_path_buf(),
+            originator: "cli".to_string(),
         cli_version: "0.0.0".to_string(),
         source: SessionSource::default(),
         agent_nickname: None,
@@ -347,12 +349,13 @@ fn write_rollout_in_sessions_with_cwd(
     let sessions_dir = codex_home.join("sessions");
     std::fs::create_dir_all(sessions_dir.as_path()).expect("create sessions dir");
     let path = sessions_dir.join(format!("rollout-{filename_ts}-{thread_uuid}.jsonl"));
-    let session_meta = SessionMeta {
-        id,
-        forked_from_id: None,
-        timestamp: event_ts.to_string(),
-        cwd,
-        originator: "cli".to_string(),
+        let session_meta = SessionMeta {
+            id,
+            forked_from_id: None,
+            wire_session_id: Some(id),
+            timestamp: event_ts.to_string(),
+            cwd,
+            originator: "cli".to_string(),
         cli_version: "0.0.0".to_string(),
         source: SessionSource::default(),
         agent_nickname: None,
