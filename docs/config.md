@@ -60,6 +60,12 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
 
+## Model output limits
+
+`model_max_output_tokens` lets you cap the maximum output tokens requested from
+the configured model provider. It can be set globally in `config.toml` or inside
+profiles, and profile values override the top-level setting.
+
 ## SQLite State DB
 
 Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
