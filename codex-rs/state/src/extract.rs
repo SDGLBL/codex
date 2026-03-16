@@ -243,6 +243,7 @@ mod tests {
             &RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: Some(
                         ThreadId::from_string(&Uuid::now_v7().to_string()).expect("thread id"),
                     ),

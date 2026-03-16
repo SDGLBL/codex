@@ -486,7 +486,10 @@ async fn prepare_realtime_start(
         RealtimeWsMode::Conversational => RealtimeSessionMode::Conversational,
         RealtimeWsMode::Transcription => RealtimeSessionMode::Transcription,
     };
-    let requested_session_id = params.session_id.or(Some(sess.conversation_id.to_string()));
+    let requested_session_id = match params.session_id {
+        Some(session_id) => Some(session_id),
+        None => Some(sess.wire_session_id().await.to_string()),
+    };
     let session_config = RealtimeSessionConfig {
         instructions: prompt,
         model,
