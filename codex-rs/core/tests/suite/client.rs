@@ -372,6 +372,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
                     originator: "test_originator".to_string(),
@@ -502,6 +503,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
                     originator: "test_originator".to_string(),
@@ -1836,6 +1838,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
 
     let client = ModelClient::new(
         None,
+        conversation_id,
         conversation_id,
         provider.clone(),
         SessionSource::Exec,
