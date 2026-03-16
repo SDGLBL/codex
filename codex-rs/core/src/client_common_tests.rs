@@ -29,6 +29,7 @@ fn serializes_text_verbosity_when_set() {
             verbosity: Some(OpenAiVerbosity::Low),
             format: None,
         }),
+        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 
@@ -70,6 +71,7 @@ fn serializes_text_schema_with_strict_format() {
         prompt_cache_key: None,
         service_tier: None,
         text: Some(text_controls),
+        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 
@@ -108,6 +110,7 @@ fn omits_text_when_not_set() {
         prompt_cache_key: None,
         service_tier: None,
         text: None,
+        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 
@@ -131,6 +134,7 @@ fn serializes_flex_service_tier_when_set() {
         prompt_cache_key: None,
         service_tier: Some(ServiceTier::Flex.to_string()),
         text: None,
+        max_output_tokens: None,
         client_metadata: None,
     };
 

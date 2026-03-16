@@ -279,6 +279,7 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
         client_metadata: None,
     };
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
@@ -322,6 +323,7 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
         client_metadata: None,
     };
 
