@@ -657,6 +657,7 @@ impl Codex {
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
             thread_name: None,
+            wire_session_id: conversation_history.wire_session_id(),
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
@@ -1197,8 +1198,9 @@ pub(crate) struct SessionConfiguration {
     codex_home: AbsolutePathBuf,
     /// Optional user-facing name for the thread, updated during the session.
     thread_name: Option<String>,
+    wire_session_id: Option<ThreadId>,
 
-    // TODO(pakrym): Remove config from here
+    // TODO(pakrym): Remove config from here
     original_config_do_not_use: Arc<Config>,
     /// Optional service name tag for session metrics.
     metrics_service_name: Option<String>,
@@ -1707,10 +1709,14 @@ impl Session {
         let (conversation_id, rollout_params) = match &initial_history {
             InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => {
                 let conversation_id = ThreadId::default();
+                let wire_session_id = session_configuration
+                    .wire_session_id
+                    .unwrap_or(conversation_id);
                 (
                     conversation_id,
                     RolloutRecorderParams::new(
                         conversation_id,
+                        wire_session_id,
                         forked_from_id,
                         session_source,
                         BaseInstructions {
@@ -1737,6 +1743,10 @@ impl Session {
                 ),
             ),
         };
+        let wire_session_id = session_configuration
+            .wire_session_id
+            .unwrap_or(conversation_id);
+        session_configuration.wire_session_id = Some(wire_session_id);
         let window_generation = match &initial_history {
             InitialHistory::Resumed(resumed_history) => u64::try_from(
                 resumed_history
@@ -2132,6 +2142,7 @@ impl Session {
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
                 conversation_id,
+                wire_session_id,
                 installation_id,
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
@@ -3655,6 +3666,14 @@ impl Session {
     ) {
         let mut state = self.state.lock().await;
         state.record_items(items.iter(), turn_context.truncation_policy);
+    }
+
+    pub(crate) async fn wire_session_id(&self) -> ThreadId {
+        let state = self.state.lock().await;
+        state
+            .session_configuration
+            .wire_session_id
+            .unwrap_or(self.conversation_id)
     }
 
     pub(crate) async fn record_model_warning(&self, message: impl Into<String>, ctx: &TurnContext) {
