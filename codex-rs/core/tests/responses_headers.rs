@@ -94,6 +94,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         session_source,
         config.model_verbosity,
         false,
+        None,
         false,
         None,
     );
@@ -208,6 +209,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         session_source,
         config.model_verbosity,
         false,
+        None,
         false,
         None,
     );
@@ -321,6 +323,7 @@ async fn responses_respects_model_info_overrides_from_config() {
         session_source,
         config.model_verbosity,
         false,
+        None,
         false,
         None,
     );
