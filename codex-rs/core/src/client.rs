@@ -152,6 +152,7 @@ struct ModelClientState {
     conversation_id: ThreadId,
     window_generation: AtomicU64,
     installation_id: String,
+    wire_session_id: ThreadId,
     provider: SharedModelProvider,
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
@@ -295,6 +296,7 @@ impl ModelClient {
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         installation_id: String,
         provider_info: ModelProviderInfo,
         session_source: SessionSource,
@@ -315,6 +317,7 @@ impl ModelClient {
                 conversation_id,
                 window_generation: AtomicU64::new(0),
                 installation_id,
+                wire_session_id,
                 provider: model_provider,
                 auth_env_telemetry,
                 session_source,
@@ -471,7 +474,7 @@ impl ModelClient {
         }
         extra_headers.extend(self.build_responses_identity_headers());
         extra_headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
+            self.state.wire_session_id.to_string(),
         )));
         let trace_attempt = compaction_trace.start_attempt(&payload);
         let result = client
@@ -793,7 +796,9 @@ impl ModelClient {
         if let Ok(header_value) = HeaderValue::from_str(&conversation_id) {
             headers.insert("x-client-request-id", header_value);
         }
-        headers.extend(build_conversation_headers(Some(conversation_id)));
+        headers.extend(build_conversation_headers(Some(
+            self.state.wire_session_id.to_string(),
+        )));
         headers.extend(self.build_responses_identity_headers());
         headers.insert(
             OPENAI_BETA_HEADER,

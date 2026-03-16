@@ -484,6 +484,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
                     originator: "test_originator".to_string(),
@@ -615,6 +616,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
                     originator: "test_originator".to_string(),
@@ -884,6 +886,7 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
             "unused-api-key",
         ))),
+        conversation_id,
         conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
@@ -2197,6 +2200,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
 
     let client = ModelClient::new(
         /*auth_manager*/ None,
+        conversation_id,
         conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider.clone(),
