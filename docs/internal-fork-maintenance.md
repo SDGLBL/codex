@@ -3,6 +3,7 @@
 This document describes the stable-release sync flow for `SDGLBL/codex`.
 
 ## Branches
+
 - `main`: current internal stable line. Every merge should correspond to one validated upstream stable release plus the internal patch stack.
 - `patches/internal`: non-executing cold backup and audit line for fork-only deltas. The sync automation no longer replays it directly, but we keep it as an independent record of internal patches in case `main` ever drops one accidentally.
 - `sync/rust-vX.Y.Z`: per-release integration branch created from fork `main`, then updated by merging the upstream `rust-vX.Y.Z` tag into that stable line.
@@ -12,6 +13,7 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 - This avoids accidentally replaying unrelated upstream commits when release tags do not form a simple linear ancestry chain.
 
 ## Tags And Releases
+
 - Upstream source of truth: `openai/codex` stable `rust-v*` releases.
 - Fork-only internal release tags: `internal-rust-vX.Y.Z`.
 - GitHub Release name: `X.Y.Z-internal`.
@@ -20,6 +22,7 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 - Manual fallback: if the auto-tag workflow is disabled or fails after the merge, create and push `internal-rust-vX.Y.Z` yourself to trigger the same release workflow.
 
 ## Automation
+
 - `.github/workflows/track-upstream-stable.yml`
   - Runs every 4 hours or on manual dispatch.
   - Checks the latest stable upstream `rust-v*` release.
@@ -41,12 +44,14 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
   - The pushed tag triggers `internal-rust-release.yml`.
 
 ## Local Setup
+
 - The automation assumes the fork is available as a git remote, but it does not require `origin` to point at the fork.
 - If your local clone still has `origin` set to `openai/codex`, pass `FORK_REPO=SDGLBL/codex` and either:
   - `FORK_REMOTE=fork` after adding `git remote add fork https://github.com/SDGLBL/codex`
   - or `FORK_URL=https://github.com/SDGLBL/codex` to let the helper script create or update the remote on demand
 
 ## Manual `gh` Fallback
+
 ```bash
 # Check the latest stable upstream rust release.
 scripts/internal/latest_upstream_stable.sh
@@ -76,6 +81,7 @@ git push fork internal-rust-v0.114.0
 ```
 
 ## Patch Stack Rules
+
 - Treat `patches/internal` as a backup ledger, not as the executing source for sync automation.
 - Keep the recorded internal deltas linear enough to inspect and recover from if `main` loses an internal change.
 - Split product behavior changes from CI/docs changes when practical so the backup line stays readable.
@@ -83,6 +89,7 @@ git push fork internal-rust-v0.114.0
 - When you add new fork-only behavior directly on `main`, mirror it into `patches/internal` soon after so the cold-backup line stays useful.
 
 ## Conflict Resolution
+
 - When the sync workflow reports a merge conflict, look for the `sync/rust-vX.Y.Z` PR and pull it locally with `gh pr checkout <pr-number> -R SDGLBL/codex`.
 - The PR branch will include `SYNC_CONFLICTS.md` with the conflicting files and an exact command sequence for reproducing the upstream merge locally.
 - The first local recovery commands are:
@@ -96,6 +103,7 @@ git push fork internal-rust-v0.114.0
 - For sync PRs created by the older cherry-pick-based workflow, you may need one extra `git merge fork/main` after the replay is done so GitHub sees the PR branch as mergeable.
 
 ## Rollback
+
 - If a sync PR turns out to be bad, close the PR and delete the `sync/rust-vX.Y.Z` branch.
 - If a release tag is bad, delete the GitHub Release and the `internal-rust-vX.Y.Z` tag, fix `main`, and re-tag.
 - Do not rewrite `archive/main-pre-sync-2026-03-13`; keep it as a fixed recovery point.
