@@ -726,7 +726,16 @@ jobs:
   # --- Gatherer job that you mark as the ONLY required status -----------------
   results:
     name: CI results (required)
-    needs: [changed, general, cargo_shear, lint_build, tests, lint_build_fork, tests_fork]
+    needs:
+      [
+        changed,
+        general,
+        cargo_shear,
+        lint_build,
+        tests,
+        lint_build_fork,
+        tests_fork,
+      ]
     if: always()
     runs-on: ubuntu-24.04
     steps:
