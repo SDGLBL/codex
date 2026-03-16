@@ -135,6 +135,8 @@ struct ModelClientState {
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
+    responses_websockets_enabled_by_feature: bool,
+    model_max_output_tokens: Option<i64>,
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
@@ -256,6 +258,8 @@ impl ModelClient {
         provider: ModelProviderInfo,
         session_source: SessionSource,
         model_verbosity: Option<VerbosityConfig>,
+        responses_websockets_enabled_by_feature: bool,
+        model_max_output_tokens: Option<i64>,
         enable_request_compression: bool,
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
@@ -273,6 +277,8 @@ impl ModelClient {
                 auth_env_telemetry,
                 session_source,
                 model_verbosity,
+                responses_websockets_enabled_by_feature,
+                model_max_output_tokens,
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
@@ -745,6 +751,7 @@ impl ModelClientSession {
             },
             prompt_cache_key,
             text,
+            max_output_tokens: self.client.state.model_max_output_tokens,
         };
         Ok(request)
     }
