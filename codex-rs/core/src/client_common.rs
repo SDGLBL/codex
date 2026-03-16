@@ -319,6 +319,7 @@ mod tests {
                 verbosity: Some(OpenAiVerbosity::Low),
                 format: None,
             }),
+            max_output_tokens: Some(64_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");
@@ -358,6 +359,7 @@ mod tests {
             prompt_cache_key: None,
             service_tier: None,
             text: Some(text_controls),
+            max_output_tokens: Some(64_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");
@@ -395,6 +397,7 @@ mod tests {
             prompt_cache_key: None,
             service_tier: None,
             text: None,
+            max_output_tokens: Some(64_000),
         };
 
         let v = serde_json::to_value(&req).expect("json");
@@ -416,6 +419,7 @@ mod tests {
             include: vec![],
             prompt_cache_key: None,
             service_tier: Some(ServiceTier::Flex.to_string()),
+            max_output_tokens: None,
             text: None,
         };
 

@@ -1654,6 +1654,7 @@ impl Session {
                 session_configuration.session_source.clone(),
                 config.model_verbosity,
                 ws_version_from_features(config.as_ref()),
+                config.model_max_output_tokens,
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
                 Self::build_model_client_beta_features_header(config.as_ref()),
