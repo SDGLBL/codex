@@ -150,6 +150,7 @@ pub(crate) const WEBSOCKET_CONNECT_TIMEOUT: Duration =
 #[derive(Debug)]
 struct ModelClientState {
     conversation_id: ThreadId,
+    wire_session_id: ThreadId,
     window_generation: AtomicU64,
     installation_id: String,
     provider: SharedModelProvider,
@@ -297,6 +298,7 @@ impl ModelClient {
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         installation_id: String,
         provider_info: ModelProviderInfo,
         session_source: SessionSource,
@@ -315,6 +317,7 @@ impl ModelClient {
         Self {
             state: Arc::new(ModelClientState {
                 conversation_id,
+                wire_session_id,
                 window_generation: AtomicU64::new(0),
                 installation_id,
                 provider: model_provider,
@@ -484,7 +487,7 @@ impl ModelClient {
         }
         extra_headers.extend(self.build_responses_identity_headers());
         extra_headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
+            self.state.wire_session_id.to_string(),
         )));
         client
             .compact_input(&payload, extra_headers)
@@ -839,7 +842,9 @@ impl ModelClient {
         if let Ok(header_value) = HeaderValue::from_str(&conversation_id) {
             headers.insert("x-client-request-id", header_value);
         }
-        headers.extend(build_conversation_headers(Some(conversation_id)));
+        headers.extend(build_conversation_headers(Some(
+            self.state.wire_session_id.to_string(),
+        )));
         headers.extend(self.build_responses_identity_headers());
         headers.insert(
             OPENAI_BETA_HEADER,

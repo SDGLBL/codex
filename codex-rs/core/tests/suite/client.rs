@@ -883,6 +883,7 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
             "unused-api-key",
         ))),
         conversation_id,
+        conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
         SessionSource::Exec,
@@ -2175,6 +2176,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
 
     let client = ModelClient::new(
         /*auth_manager*/ None,
+        conversation_id,
         conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider.clone(),

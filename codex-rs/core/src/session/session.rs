@@ -71,6 +71,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) codex_home: AbsolutePathBuf,
     /// Optional user-facing name for the thread, updated during the session.
     pub(super) thread_name: Option<String>,
+    pub(super) wire_session_id: Option<ThreadId>,
 
     // TODO(pakrym): Remove config from here
     pub(super) original_config_do_not_use: Arc<Config>,
@@ -241,10 +242,14 @@ impl Session {
         let (conversation_id, rollout_params) = match &initial_history {
             InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => {
                 let conversation_id = ThreadId::default();
+                let wire_session_id = session_configuration
+                    .wire_session_id
+                    .unwrap_or(conversation_id);
                 (
                     conversation_id,
                     RolloutRecorderParams::new(
                         conversation_id,
+                        wire_session_id,
                         forked_from_id,
                         session_source,
                         BaseInstructions {
@@ -271,6 +276,11 @@ impl Session {
                 ),
             ),
         };
+        session_configuration.wire_session_id = Some(
+            session_configuration
+                .wire_session_id
+                .unwrap_or(conversation_id),
+        );
         let window_generation = match &initial_history {
             InitialHistory::Resumed(resumed_history) => u64::try_from(
                 resumed_history
@@ -684,6 +694,9 @@ impl Session {
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
                 conversation_id,
+                session_configuration
+                    .wire_session_id
+                    .unwrap_or(conversation_id),
                 installation_id,
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
@@ -866,5 +879,15 @@ impl Session {
         );
 
         Ok(sess)
+    }
+}
+
+impl Session {
+    pub(crate) async fn wire_session_id(&self) -> ThreadId {
+        let state = self.state.lock().await;
+        state
+            .session_configuration
+            .wire_session_id
+            .unwrap_or(self.conversation_id)
     }
 }
