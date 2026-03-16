@@ -24,6 +24,7 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
   - Creates or refreshes `sync/rust-vX.Y.Z`.
   - Cherry-picks the full `patches/internal` stack onto the upstream release tag.
   - Pushes the sync branch and opens or updates the corresponding pull request to `main`.
+  - If cherry-pick hits conflicts, it still pushes the sync branch, commits `SYNC_CONFLICTS.md`, opens or updates the PR, comments with pull instructions, and then fails the workflow so the conflict is visible in Actions.
 - `.github/workflows/internal-rust-release.yml`
   - Supports manual dry-runs with `workflow_dispatch`.
   - Publishes GitHub Releases only for `internal-rust-v*` tag pushes.
@@ -53,6 +54,9 @@ gh workflow run prepare-sync-pr.yml -R SDGLBL/codex -f upstream_tag=rust-v0.114.
 # Inspect the current sync pull request.
 gh pr list -R SDGLBL/codex --base main --head sync/rust-v0.114.0
 
+# Pull the sync PR locally for manual conflict resolution.
+gh pr checkout <pr-number> -R SDGLBL/codex
+
 # Trigger a dry-run build for the internal release workflow.
 gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-v0.114.0
 ```
@@ -61,6 +65,12 @@ gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-v
 - Keep the patch stack linear and cherry-pick friendly.
 - Split product behavior changes from CI/docs changes.
 - Avoid mixing upstream version bumps from `rust-vX.Y.Z` alignment into the long-lived patch stack. Those belong to the release-sync branch, not to `patches/internal`.
+
+## Conflict Resolution
+- When the sync workflow reports a cherry-pick conflict, look for the `sync/rust-vX.Y.Z` PR and pull it locally with `gh pr checkout <pr-number> -R SDGLBL/codex`.
+- The PR branch will include `SYNC_CONFLICTS.md` with the first conflicting patch commit, the conflicting files, and the remaining commits that still need to be replayed.
+- Resolve the conflict locally by replaying the first blocked commit with `git cherry-pick -x <commit>`, running `git cherry-pick --continue`, then applying any remaining commits in order.
+- Delete `SYNC_CONFLICTS.md` before merging the PR.
 
 ## Rollback
 - If a sync PR turns out to be bad, close the PR and delete the `sync/rust-vX.Y.Z` branch.
