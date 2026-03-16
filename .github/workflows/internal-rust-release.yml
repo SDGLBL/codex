@@ -1,0 +1,262 @@
+name: internal-rust-release
+
+on:
+  push:
+    tags:
+      - "internal-rust-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream rust release tag, for example rust-v0.114.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      internal_tag: ${{ steps.meta.outputs.internal_tag }}
+      upstream_tag: ${{ steps.meta.outputs.upstream_tag }}
+      version: ${{ steps.meta.outputs.version }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            internal_tag="${GITHUB_REF_NAME}"
+            upstream_tag="${internal_tag#internal-}"
+            publish=true
+          else
+            upstream_tag="${{ inputs.upstream_tag }}"
+            internal_tag="internal-${upstream_tag}"
+            publish=false
+          fi
+
+          if [[ ! "${internal_tag}" =~ ^internal-rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
+            echo "unexpected internal tag format: ${internal_tag}" >&2
+            exit 1
+          fi
+
+          echo "internal_tag=${internal_tag}" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=${upstream_tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${upstream_tag#rust-v}" >> "$GITHUB_OUTPUT"
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    name: Build - ${{ matrix.runner }} - ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: codex-rs
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          packages=(pkg-config libcap-dev)
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-musl" ]]; then
+            packages+=(libubsan1)
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        name: Use hermetic Cargo home (musl)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_home="${GITHUB_WORKSPACE}/.cargo-home"
+          mkdir -p "${cargo_home}/bin"
+          echo "CARGO_HOME=${cargo_home}" >> "$GITHUB_ENV"
+          echo "${cargo_home}/bin" >> "$GITHUB_PATH"
+          : > "${cargo_home}/config.toml"
+
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        name: Install musl build tools
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        name: Configure rustc UBSan wrapper (musl host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ubsan=""
+          if command -v ldconfig >/dev/null 2>&1; then
+            ubsan="$(ldconfig -p | grep -m1 'libubsan\.so\.1' | sed -E 's/.*=> (.*)$/\1/')"
+          fi
+          wrapper_root="${RUNNER_TEMP:-/tmp}"
+          wrapper="${wrapper_root}/rustc-ubsan-wrapper"
+          cat > "${wrapper}" <<EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ -n "${ubsan}" ]]; then
+            export LD_PRELOAD="${ubsan}\${LD_PRELOAD:+:\${LD_PRELOAD}}"
+          fi
+          exec "\$1" "\${@:2}"
+          EOF
+          chmod +x "${wrapper}"
+          echo "RUSTC_WRAPPER=${wrapper}" >> "$GITHUB_ENV"
+          echo "RUSTC_WORKSPACE_WRAPPER=" >> "$GITHUB_ENV"
+
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        name: Clear sanitizer flags (musl)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Avoid problematic aws-lc jitter entropy code path on musl builders.
+          echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >> "$GITHUB_ENV"
+          target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${{ matrix.target }}"
+          target_no_jitter="${target_no_jitter//-/_}"
+          echo "${target_no_jitter}=1" >> "$GITHUB_ENV"
+
+          echo "RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_ENCODED_RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "RUSTDOCFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_BUILD_RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=" >> "$GITHUB_ENV"
+
+          sanitize_flags() {
+            local input="$1"
+            input="${input//-fsanitize=undefined/}"
+            input="${input//-fno-sanitize-recover=undefined/}"
+            input="${input//-fno-sanitize-trap=undefined/}"
+            echo "$input"
+          }
+
+          cflags="$(sanitize_flags "${CFLAGS-}")"
+          cxxflags="$(sanitize_flags "${CXXFLAGS-}")"
+          echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
+          echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
+
+      - name: Verify Cargo version matches upstream release
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ needs.meta.outputs.version }}"
+          actual="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          [[ "${actual}" == "${expected}" ]] || {
+            echo "Cargo.toml version ${actual} does not match ${expected}" >&2
+            exit 1
+          }
+
+      - name: Build release binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --target "${{ matrix.target }}" --release --bin codex --bin codex-responses-api-proxy
+
+      - name: Stage internal release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          dest="dist/${{ matrix.target }}"
+          mkdir -p "${dest}"
+
+          cp "${release_dir}/codex" "${dest}/codex"
+          cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
+
+          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex
+          tar -C "${dest}" -czf "${dest}/codex-responses-api-proxy-${{ matrix.target }}.tar.gz" codex-responses-api-proxy
+
+          rm "${dest}/codex" "${dest}/codex-responses-api-proxy"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: internal-release-${{ matrix.target }}
+          path: codex-rs/dist/${{ matrix.target }}/*
+
+  bundle:
+    needs:
+      - meta
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+
+      - name: Prepare static release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp codex-rs/core/config.schema.json dist/config.schema.json
+          cp scripts/install/install.sh dist/install.sh
+          cp scripts/install/install.ps1 dist/install.ps1
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin patches/internal
+
+          notes_path="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "Internal Codex CLI release for upstream \`${{ needs.meta.outputs.upstream_tag }}\`."
+            echo
+            echo "## Patch Stack"
+            while read -r commit; do
+              git log -1 --format='- `%h` %s' "${commit}"
+            done < <(scripts/internal/patch_stack_commits.sh origin/patches/internal HEAD)
+          } > "${notes_path}"
+          echo "path=${notes_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: ${{ needs.meta.outputs.publish == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.meta.outputs.version }}-internal
+          tag_name: ${{ needs.meta.outputs.internal_tag }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: dist/**
+          prerelease: ${{ contains(needs.meta.outputs.version, '-') }}
+
+      - name: Upload dry-run bundle
+        if: ${{ needs.meta.outputs.publish != 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: internal-release-dry-run-${{ needs.meta.outputs.version }}
+          path: dist/**

@@ -18,6 +18,7 @@ concurrency:
 jobs:
   test:
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:
