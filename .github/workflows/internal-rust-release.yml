@@ -222,7 +222,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp codex-rs/core/config.schema.json dist/config-schema.json
+          cp codex-rs/core/config.schema.json dist/config.schema.json
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
 
