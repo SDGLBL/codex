@@ -1605,6 +1605,7 @@ async fn websocket_harness_with_options(
         SessionSource::Exec,
         config.model_verbosity,
         ws_version_from_features(&config),
+        None,
         false,
         runtime_metrics_enabled,
         None,
