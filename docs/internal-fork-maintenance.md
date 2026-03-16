@@ -5,7 +5,7 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
 ## Branches
 - `main`: current internal stable line. Every merge should correspond to one validated upstream stable release plus the internal patch stack.
 - `patches/internal`: long-lived linear patch stack. Keep it branch-only and rebase it when the internal feature set changes.
-- `sync/rust-vX.Y.Z`: per-release integration branch created from the upstream `rust-vX.Y.Z` tag and populated by cherry-picking `patches/internal`.
+- `sync/rust-vX.Y.Z`: per-release integration branch created from fork `main`, then updated by merging the upstream `rust-vX.Y.Z` tag into that stable line.
 - `archive/main-pre-sync-2026-03-13`: backup branch that preserves the pre-sync fork state before the first large resync.
 - The patch stack should stay rooted at the current internal stable line.
 - The sync helper computes patch commits relative to fork `main`, not the new upstream `rust-vX.Y.Z` tag.
@@ -24,9 +24,10 @@ This document describes the stable-release sync flow for `SDGLBL/codex`.
   - Dispatches `prepare-sync-pr.yml` when the fork does not yet have a matching internal release tag or an open sync PR.
 - `.github/workflows/prepare-sync-pr.yml`
   - Creates or refreshes `sync/rust-vX.Y.Z`.
-  - Cherry-picks the full `patches/internal` stack onto the upstream release tag.
+  - Starts from fork `main`, then merges the upstream release tag into that branch.
+  - Includes the current `patches/internal` stack in the PR body for auditability, but it does not replay those commits one by one during sync prep.
   - Pushes the sync branch and opens or updates the corresponding pull request to `main`.
-  - If cherry-pick hits conflicts, it still pushes the sync branch, commits `SYNC_CONFLICTS.md`, opens or updates the PR, comments with pull instructions, and then fails the workflow so the conflict is visible in Actions.
+  - If the merge hits conflicts, it still pushes the sync branch, commits `SYNC_CONFLICTS.md`, opens or updates the PR, comments with pull instructions, and then fails the workflow so the conflict is visible in Actions.
 - `.github/workflows/internal-rust-release.yml`
   - Supports manual dry-runs with `workflow_dispatch`.
   - Publishes GitHub Releases only for `internal-rust-v*` tag pushes.
@@ -67,12 +68,19 @@ gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-v
 - Keep the patch stack linear and cherry-pick friendly.
 - Split product behavior changes from CI/docs changes.
 - Avoid mixing upstream version bumps from `rust-vX.Y.Z` alignment into the long-lived patch stack. Those belong to the release-sync branch, not to `patches/internal`.
+- When you add new fork-only behavior directly on `main`, immediately mirror it into `patches/internal`. The sync workflow now merges from `main`, but `patches/internal` remains the long-lived audit trail for internal deltas.
 
 ## Conflict Resolution
-- When the sync workflow reports a cherry-pick conflict, look for the `sync/rust-vX.Y.Z` PR and pull it locally with `gh pr checkout <pr-number> -R SDGLBL/codex`.
-- The PR branch will include `SYNC_CONFLICTS.md` with the first conflicting patch commit, the conflicting files, and the remaining commits that still need to be replayed.
-- Resolve the conflict locally by replaying the first blocked commit with `git cherry-pick -x <commit>`, running `git cherry-pick --continue`, then applying any remaining commits in order.
-- Delete `SYNC_CONFLICTS.md` before merging the PR.
+- When the sync workflow reports a merge conflict, look for the `sync/rust-vX.Y.Z` PR and pull it locally with `gh pr checkout <pr-number> -R SDGLBL/codex`.
+- The PR branch will include `SYNC_CONFLICTS.md` with the conflicting files and an exact command sequence for reproducing the upstream merge locally.
+- The first local recovery commands are:
+  ```bash
+  gh pr checkout <pr-number> -R SDGLBL/codex
+  git fetch https://github.com/openai/codex refs/tags/rust-vX.Y.Z:refs/tags/rust-vX.Y.Z
+  git merge --no-ff rust-vX.Y.Z
+  ```
+- Resolve the conflicts, stage your fixes, remove `SYNC_CONFLICTS.md`, then finish with `git commit` and `git push`.
+- For sync PRs created by the older cherry-pick-based workflow, you may need one extra `git merge fork/main` after the replay is done so GitHub sees the PR branch as mergeable.
 
 ## Rollback
 - If a sync PR turns out to be bad, close the PR and delete the `sync/rust-vX.Y.Z` branch.

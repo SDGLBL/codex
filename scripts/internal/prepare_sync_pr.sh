@@ -85,12 +85,12 @@ git fetch --quiet "${upstream_remote}" "refs/tags/${upstream_tag}:refs/tags/${up
 
 mapfile -t patch_commits < <("${repo_root}/scripts/internal/patch_stack_commits.sh" "${patch_branch}" "${patch_base_ref}")
 
-if [[ ${#patch_commits[@]} -eq 0 ]]; then
-  echo "no patch commits found on ${patch_branch}" >&2
-  exit 1
-fi
-
 render_commit_list() {
+  if [[ $# -eq 0 ]]; then
+    echo "- No commits are currently unique to \`${patch_branch}\`."
+    return
+  fi
+
   local commit
   for commit in "$@"; do
     git log -1 --format='- `%h` %s' "${commit}"
@@ -100,68 +100,89 @@ render_commit_list() {
 existing_pr=""
 
 conflict_detected=false
-conflict_commit=""
 conflict_subject=""
 conflict_files=()
-remaining_commits=()
+merge_summary="merge ${upstream_tag} into ${fork_remote}/${base_branch}"
 
-git checkout -B "${sync_branch}" "${upstream_tag}"
+git checkout -B "${sync_branch}" "${fork_remote}/${base_branch}"
 
-for i in "${!patch_commits[@]}"; do
-  commit="${patch_commits[$i]}"
-  if git cherry-pick -x "${commit}"; then
-    continue
-  fi
-
+if ! git merge --no-ff --no-commit "${upstream_tag}"; then
   conflict_detected=true
-  conflict_commit="${commit}"
-  conflict_subject="$(git log -1 --format='%s' "${commit}")"
+  conflict_subject="${merge_summary}"
   mapfile -t conflict_files < <(git diff --name-only --diff-filter=U | sort -u)
-  remaining_commits=("${patch_commits[@]:$i}")
 
-  git cherry-pick --abort
+  git merge --abort
 
   {
     echo "# Manual Sync Conflict Resolution"
     echo
-    echo "Automatic sync from \`${upstream_tag}\` into \`${sync_branch}\` stopped before the first conflicting patch commit."
+    echo "Automatic sync could not complete \`${merge_summary}\`."
     echo
-    echo "## First Conflicting Patch Commit"
-    echo "- \`$(git rev-parse --short "${conflict_commit}")\` ${conflict_subject}"
+    echo "This branch already starts from the current internal stable line, so once you finish the same merge locally and push the result, the PR should become mergeable."
     echo
     echo "## Conflicting Files"
     if [[ ${#conflict_files[@]} -eq 0 ]]; then
-      echo "- Git reported a cherry-pick conflict, but no unmerged file paths were captured."
+      echo "- Git reported a merge conflict, but no unmerged file paths were captured."
     else
       for path in "${conflict_files[@]}"; do
         echo "- \`${path}\`"
       done
     fi
     echo
-    echo "## Remaining Patch Commits"
-    render_commit_list "${remaining_commits[@]}"
+    echo "## Current Internal Patch Stack"
+    render_commit_list "${patch_commits[@]}"
     echo
     echo "## Continue Locally"
-    echo "1. Check out this branch locally from the PR."
-    echo "2. Start by replaying the first conflicting patch commit:"
-    echo "   \`git cherry-pick -x ${conflict_commit}\`"
-    echo "3. Resolve the files above, then run \`git cherry-pick --continue\`."
-    if [[ ${#remaining_commits[@]} -gt 1 ]]; then
-      echo "4. Cherry-pick the remaining patch commits in order:"
-      for commit in "${remaining_commits[@]:1}"; do
-        echo "   - \`git cherry-pick -x ${commit}\`"
-      done
-    fi
-    echo "5. Delete this file before merging the PR."
+    echo "1. Pull this sync branch locally:"
+    echo
+    echo '   ```bash'
+    echo "   gh pr checkout <pr-number> -R ${fork_repo}"
+    echo "   # or"
+    echo "   git fetch ${fork_remote} ${sync_branch}"
+    echo "   git switch -C ${sync_branch} --track ${fork_remote}/${sync_branch}"
+    echo '   ```'
+    echo
+    echo "2. Fetch the upstream release tag into your local clone:"
+    echo
+    echo '   ```bash'
+    echo "   git fetch ${upstream_url} refs/tags/${upstream_tag}:refs/tags/${upstream_tag}"
+    echo '   ```'
+    echo
+    echo "3. Re-run the upstream merge locally:"
+    echo
+    echo '   ```bash'
+    echo "   git merge --no-ff ${upstream_tag}"
+    echo '   ```'
+    echo
+    echo "4. Resolve the files above, then stage your fixes:"
+    echo
+    echo '   ```bash'
+    echo "   git status"
+    echo "   git add <resolved-files>"
+    echo '   ```'
+    echo
+    echo "5. Remove this helper note before finishing the merge:"
+    echo
+    echo '   ```bash'
+    echo "   git rm ${conflict_note_path}"
+    echo '   ```'
+    echo
+    echo "6. Finish the merge and push the branch back to the PR:"
+    echo
+    echo '   ```bash'
+    echo "   git commit"
+    echo "   git push ${fork_remote} HEAD:${sync_branch}"
+    echo '   ```'
+    echo
+    echo "If Git says the merge produced no changes, double-check that you are on \`${sync_branch}\` and that the branch tip matches the PR head before retrying."
   } > "${conflict_note_path}"
 
   git add "${conflict_note_path}"
   git commit -m "chore: record sync conflicts for ${upstream_tag}"
-  break
-done
+fi
 
 if [[ "${conflict_detected}" != "true" ]]; then
-  changed_paths="$(git diff --name-only HEAD~${#patch_commits[@]}..HEAD)"
+  changed_paths="$(git diff --name-only --cached)"
   if command -v just >/dev/null 2>&1 && grep -Eq '^codex-rs/core/src/config/(mod|profile)\.rs$' <<<"${changed_paths}"; then
     (
       cd "${repo_root}/codex-rs"
@@ -176,16 +197,17 @@ if [[ "${conflict_detected}" != "true" ]]; then
     fi
     if [[ ${#generated_artifacts[@]} -gt 0 ]]; then
       git add "${generated_artifacts[@]}"
-      git commit -m "chore: refresh generated artifacts for ${upstream_tag}"
     fi
   fi
+
+  git commit -m "chore: sync ${upstream_tag} into ${base_branch}"
 fi
 
 body_file="$(mktemp)"
 {
   echo "## Summary"
-  echo "- sync fork against upstream \`${upstream_tag}\`"
-  echo "- cherry-pick the current internal patch stack from \`${patch_branch}\`"
+  echo "- branch starts from the current internal stable line: \`${fork_remote}/${base_branch}\`"
+  echo "- merge upstream release \`${upstream_tag}\` into that stable line"
   echo "- keep the fork release automation and internal release tag flow"
   echo
   echo "## Patch Stack"
@@ -194,7 +216,7 @@ body_file="$(mktemp)"
   if [[ "${conflict_detected}" == "true" ]]; then
     echo "## Manual Conflict Resolution Required"
     echo "- sync branch: \`${sync_branch}\`"
-    echo "- first conflicting patch commit: \`$(git rev-parse --short "${conflict_commit}")\` ${conflict_subject}"
+    echo "- blocked operation: \`${conflict_subject}\`"
     if [[ ${#conflict_files[@]} -eq 0 ]]; then
       echo "- conflicting files: Git did not report unmerged file paths."
     else
@@ -204,7 +226,7 @@ body_file="$(mktemp)"
       done
     fi
     echo "- helper note committed at \`${conflict_note_path}\`"
-    echo "- pull this branch locally and start with \`git cherry-pick -x ${conflict_commit}\`"
+    echo "- pull this branch locally, fetch \`${upstream_tag}\`, then run \`git merge --no-ff ${upstream_tag}\`"
   else
     echo "## Notes"
     echo "- branch name: \`${sync_branch}\`"
@@ -254,7 +276,7 @@ if [[ "${conflict_detected}" == "true" ]]; then
       echo "## Manual conflict resolution required"
       echo
       echo "- sync branch: \`${sync_branch}\`"
-      echo "- first conflicting patch commit: \`$(git rev-parse --short "${conflict_commit}")\` ${conflict_subject}"
+      echo "- blocked operation: \`${conflict_subject}\`"
       echo "- note committed at \`${conflict_note_path}\`"
       if [[ -n "${existing_pr}" ]]; then
         echo "- PR: #${existing_pr}"
@@ -265,7 +287,7 @@ if [[ "${conflict_detected}" == "true" ]]; then
   if [[ "${open_pr}" == "true" ]] && [[ -n "${existing_pr}" ]]; then
     comment_file="$(mktemp)"
     {
-      echo "Automatic sync hit a cherry-pick conflict while applying \`${conflict_commit}\` to \`${upstream_tag}\`."
+      echo "Automatic sync could not complete \`${merge_summary}\`."
       echo
       echo "Pull this PR locally with:"
       echo
@@ -274,8 +296,11 @@ if [[ "${conflict_detected}" == "true" ]]; then
       echo "# or"
       echo "git fetch ${fork_remote} ${sync_branch}"
       echo "git switch -C ${sync_branch} --track ${fork_remote}/${sync_branch}"
-      echo "git cherry-pick -x ${conflict_commit}"
+      echo "git fetch ${upstream_url} refs/tags/${upstream_tag}:refs/tags/${upstream_tag}"
+      echo "git merge --no-ff ${upstream_tag}"
       echo '```'
+      echo
+      echo "After resolving the merge, run \`git rm ${conflict_note_path}\`, finish with \`git commit\`, and push back to \`${sync_branch}\`."
       echo
       echo "Conflict details are committed in \`${conflict_note_path}\`."
     } > "${comment_file}"
