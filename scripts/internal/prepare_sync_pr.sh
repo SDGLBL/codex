@@ -256,6 +256,9 @@ if [[ "${open_pr}" == "true" ]]; then
   fi
   if [[ -n "${existing_pr}" ]]; then
     gh pr edit "${existing_pr}" --repo "${fork_repo}" --title "${title}" --body-file "${body_file}"
+    if [[ "${conflict_detected}" == "true" ]]; then
+      gh pr ready "${existing_pr}" --repo "${fork_repo}" --undo
+    fi
   else
     gh pr create "${create_args[@]}" --repo "${fork_repo}" --base "${base_branch}" --head "${sync_branch}" --title "${title}" --body-file "${body_file}"
     existing_pr="$(
