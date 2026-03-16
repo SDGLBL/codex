@@ -1859,6 +1859,8 @@ async fn websocket_harness_with_provider_options(
         provider.clone(),
         SessionSource::Exec,
         config.model_verbosity,
+        ws_version_from_features(&config),
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         runtime_metrics_enabled,
         /*beta_features_header*/ None,

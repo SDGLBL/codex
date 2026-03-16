@@ -183,6 +183,7 @@ pub struct ResponsesApiRequest {
     pub text: Option<TextControls>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_metadata: Option<HashMap<String, String>>,
+    pub max_output_tokens: Option<i64>,
 }
 
 impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
@@ -202,6 +203,7 @@ impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
             service_tier: request.service_tier.clone(),
             prompt_cache_key: request.prompt_cache_key.clone(),
             text: request.text.clone(),
+            max_output_tokens: request.max_output_tokens,
             generate: None,
             client_metadata: request.client_metadata.clone(),
         }
@@ -229,6 +231,8 @@ pub struct ResponseCreateWsRequest {
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
