@@ -10,6 +10,11 @@ on:
         description: Upstream rust release tag, for example rust-v0.114.0
         required: true
         type: string
+      publish:
+        description: Publish a real GitHub Release instead of a dry-run bundle
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -25,6 +30,9 @@ jobs:
     steps:
       - name: Compute release metadata
         id: meta
+        env:
+          INPUT_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
@@ -33,9 +41,9 @@ jobs:
             upstream_tag="${internal_tag#internal-}"
             publish=true
           else
-            upstream_tag="${{ inputs.upstream_tag }}"
+            upstream_tag="${INPUT_UPSTREAM_TAG}"
             internal_tag="internal-${upstream_tag}"
-            publish=false
+            publish="${INPUT_PUBLISH:-false}"
           fi
 
           if [[ ! "${internal_tag}" =~ ^internal-rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
