@@ -770,6 +770,7 @@ impl ModelClientSession {
         let conversation_id = self.client.state.conversation_id.to_string();
         ApiResponsesOptions {
             conversation_id: Some(conversation_id),
+            wire_session_id: Some(self.client.state.wire_session_id.to_string()),
             session_source: Some(self.client.state.session_source.clone()),
             extra_headers: build_responses_headers(
                 self.client.state.beta_features_header.as_deref(),
