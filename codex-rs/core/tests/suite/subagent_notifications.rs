@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::config::AgentRoleConfig;
 use codex_core::features::Feature;
+use codex_core::read_session_meta_line;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use core_test_support::responses::ResponsesRequest;
@@ -489,6 +490,14 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .await?
         .rollout_path()
         .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
+    let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
+    assert_eq!(
+        child_session_meta
+            .meta
+            .wire_session_id
+            .map(|id| id.to_string()),
+        Some(parent_session_id.clone())
+    );
 
     let resumed_child_turn = mount_sse_once_match(
         &server,
