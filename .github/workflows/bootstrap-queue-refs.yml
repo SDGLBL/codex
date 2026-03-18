@@ -1,0 +1,79 @@
+name: bootstrap-queue-refs
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream rust release tag used as the queue base, for example rust-v0.115.0
+        required: true
+        type: string
+      source_branch:
+        description: Fork branch whose unique commits should seed the queue
+        required: false
+        default: main
+        type: string
+      patch_base_ref:
+        description: Optional ref used to derive patch commits from source_branch; defaults to upstream_tag
+        required: false
+        default: ""
+        type: string
+      patch_commits:
+        description: Optional whitespace-separated commit list to replay instead of auto-deriving source_branch unique commits
+        required: false
+        default: ""
+        type: string
+      promote_main:
+        description: Force-update main to the bootstrapped queue head during cutover
+        required: false
+        default: true
+        type: boolean
+      allow_overwrite:
+        description: Allow replacing existing queue/internal and queue/base/internal refs
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.repository == 'SDGLBL/codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Require queue promotion token
+        env:
+          INTERNAL_QUEUE_PAT: ${{ secrets.INTERNAL_QUEUE_PAT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${INTERNAL_QUEUE_PAT}" ]] || {
+            echo "missing INTERNAL_QUEUE_PAT secret" >&2
+            exit 1
+          }
+
+      - name: Bootstrap queue refs
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
+          PUSH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
+          FORK_REPO: ${{ github.repository }}
+          FORK_URL: ${{ github.server_url }}/${{ github.repository }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          PATCH_BASE_REF: ${{ inputs.patch_base_ref }}
+          PATCH_COMMITS: ${{ inputs.patch_commits }}
+          PUSH_REFS: "true"
+          PROMOTE_MAIN: ${{ inputs.promote_main }}
+          ALLOW_OVERWRITE: ${{ inputs.allow_overwrite }}
+        run: |
+          set -euo pipefail
+          scripts/internal/bootstrap_queue_refs.sh "${{ inputs.upstream_tag }}"
