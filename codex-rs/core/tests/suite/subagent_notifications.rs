@@ -30,13 +30,13 @@ const TURN_0_FORK_PROMPT: &str = "seed fork context";
 const TURN_1_PROMPT: &str = "spawn a child and continue";
 const TURN_2_NO_WAIT_PROMPT: &str = "follow up without wait";
 const CHILD_PROMPT: &str = "child: do work";
+const RESUMED_CHILD_PROMPT: &str = "resumed child: continue";
 const INHERITED_MODEL: &str = "gpt-5.2-codex";
 const INHERITED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::XHigh;
 const REQUESTED_MODEL: &str = "gpt-5.1";
 const REQUESTED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
 const ROLE_MODEL: &str = "gpt-5.1-codex-max";
 const ROLE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::High;
-const RESUMED_CHILD_PROMPT: &str = "child: resumed follow up";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     let is_zstd = req
