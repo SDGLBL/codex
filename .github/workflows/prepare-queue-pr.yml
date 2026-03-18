@@ -1,0 +1,53 @@
+name: prepare-queue-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream rust release tag to replay onto the queue, for example rust-v0.116.0
+        required: true
+        type: string
+      mode:
+        description: official creates a candidate PR, rehearsal creates an isolated branch and tag for dry-run validation
+        required: false
+        default: official
+        type: choice
+        options:
+          - official
+          - rehearsal
+      rehearsal_suffix:
+        description: Optional suffix for rehearsal branch/tag names; defaults to the GitHub run id
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    if: github.repository == 'SDGLBL/codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Prepare queue replay branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_REPO: ${{ github.repository }}
+          FORK_URL: ${{ github.server_url }}/${{ github.repository }}
+          MODE: ${{ inputs.mode }}
+          REHEARSAL_SUFFIX: ${{ inputs.rehearsal_suffix }}
+        run: |
+          set -euo pipefail
+          scripts/internal/prepare_queue_pr.sh "${{ inputs.upstream_tag }}"
