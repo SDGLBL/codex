@@ -40,6 +40,7 @@ Historical refs such as `patches/internal` and `sync/rust-*` are not part of thi
   - `official` mode creates or refreshes `candidate/queue/rust-vX.Y.Z`.
   - Replays `queue/base/internal..queue/internal` onto the upstream tag with `cherry-pick -x`.
   - Drops replayed `codex-rs/Cargo.lock` hunks and regenerates the lockfile after replay so queue commits stay base-agnostic across releases.
+  - Uses `INTERNAL_QUEUE_PAT` for pushes so rehearsal and official tags can trigger downstream release workflows.
   - Opens or updates a PR to `queue/internal` for review.
   - `rehearsal` mode creates `rehearsal/queue/...` plus a `rehearsal-internal-rust-v...` tag for dry-run validation.
 - `.github/workflows/promote-queue-pr.yml`

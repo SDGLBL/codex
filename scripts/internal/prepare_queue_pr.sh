@@ -17,6 +17,7 @@ queue_base_branch="${QUEUE_BASE_BRANCH:-queue/base/internal}"
 candidate_branch="${CANDIDATE_BRANCH:-}"
 upstream_remote="${UPSTREAM_REMOTE:-upstream}"
 upstream_url="${UPSTREAM_URL:-https://github.com/openai/codex}"
+push_token="${PUSH_TOKEN:-}"
 push_branch="${PUSH_BRANCH:-true}"
 open_pr="${OPEN_PR:-auto}"
 rehearsal_suffix="${REHEARSAL_SUFFIX:-${GITHUB_RUN_ID:-$(date +%Y%m%d%H%M%S)}}"
@@ -127,6 +128,12 @@ if git remote get-url "${fork_remote}" >/dev/null 2>&1; then
   git remote set-url "${fork_remote}" "${fork_url}"
 else
   git remote add "${fork_remote}" "${fork_url}"
+fi
+
+if [[ -n "${push_token}" ]]; then
+  git remote set-url --push "${fork_remote}" "https://x-access-token:${push_token}@github.com/${fork_repo}.git"
+else
+  git remote set-url --push "${fork_remote}" "${fork_url}"
 fi
 
 if git remote get-url "${upstream_remote}" >/dev/null 2>&1; then
