@@ -619,6 +619,7 @@ impl ModelClient {
         if let Ok(header_value) = HeaderValue::from_str(&conversation_id) {
             headers.insert("x-client-request-id", header_value);
         }
+        headers.extend(build_conversation_headers(Some(conversation_id)));
         headers.extend(build_conversation_headers(Some(
             self.state.wire_session_id.to_string(),
         )));
