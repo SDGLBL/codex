@@ -41,9 +41,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Require queue promotion token
+        env:
+          INTERNAL_QUEUE_PAT: ${{ secrets.INTERNAL_QUEUE_PAT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${INTERNAL_QUEUE_PAT}" ]] || {
+            echo "missing INTERNAL_QUEUE_PAT secret" >&2
+            exit 1
+          }
+
       - name: Prepare queue replay branch
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
+          PUSH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
           FORK_REPO: ${{ github.repository }}
           FORK_URL: ${{ github.server_url }}/${{ github.repository }}
           MODE: ${{ inputs.mode }}
