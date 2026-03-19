@@ -174,21 +174,33 @@ if [[ "$(git rev-parse "${head_remote_ref}")" != "${head_sha}" ]]; then
   exit 1
 fi
 
-if ! git merge-base --is-ancestor "${queue_remote_ref}" "${head_sha}"; then
-  echo "${head_sha} does not fast-forward ${queue_branch}" >&2
-  exit 1
-fi
-
-if ! git merge-base --is-ancestor "${main_remote_ref}" "${head_sha}"; then
-  echo "${head_sha} does not fast-forward ${main_branch}" >&2
-  exit 1
-fi
-
 push_options=(--atomic)
 push_refspecs=(
   "${head_sha}:refs/heads/${queue_branch}"
   "${head_sha}:refs/heads/${main_branch}"
 )
+
+queue_branch_sha="$(git rev-parse "${queue_remote_ref}")"
+main_branch_sha="$(git rev-parse "${main_remote_ref}")"
+
+if [[ "${release_mode}" == "release" ]]; then
+  # Replay candidates are rebased onto the new upstream release tag, so promotion
+  # intentionally rewrites the queue refs to the validated replay head.
+  push_options+=(
+    "--force-with-lease=refs/heads/${queue_branch}:${queue_branch_sha}"
+    "--force-with-lease=refs/heads/${main_branch}:${main_branch_sha}"
+  )
+else
+  if ! git merge-base --is-ancestor "${queue_remote_ref}" "${head_sha}"; then
+    echo "${head_sha} does not fast-forward ${queue_branch}" >&2
+    exit 1
+  fi
+
+  if ! git merge-base --is-ancestor "${main_remote_ref}" "${head_sha}"; then
+    echo "${head_sha} does not fast-forward ${main_branch}" >&2
+    exit 1
+  fi
+fi
 
 release_summary=""
 if [[ "${release_mode}" == "release" ]]; then
@@ -232,7 +244,7 @@ comment_file="$(mktemp)"
     echo "Official release tag \`internal-${upstream_tag}\` now points at the promoted queue head."
   fi
   echo
-  echo "This PR was reviewed as a queue promotion artifact and then closed after the fast-forward promotion."
+  echo "This PR was reviewed as a queue promotion artifact and then closed after promotion."
 } > "${comment_file}"
 
 gh pr comment "${pr_number}" --repo "${fork_repo}" --body-file "${comment_file}"
