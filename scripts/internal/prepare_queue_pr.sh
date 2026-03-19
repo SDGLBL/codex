@@ -336,7 +336,7 @@ body_file="$(mktemp)"
     echo "- queue replay strips stale \`${cargo_lock_path}\` hunks and refreshes the lockfile after replay"
     if [[ "${mode}" == "official" ]]; then
       echo "- ready for review against \`${queue_branch}\`"
-      echo "- promotion should fast-forward both \`${queue_branch}\` and \`main\`"
+      echo "- promotion should update both \`${queue_branch}\` and \`main\` to the validated replay head"
     else
       echo "- rehearsal branch is ready for dry-run release validation"
       echo "- promotion is intentionally disabled in rehearsal mode"
