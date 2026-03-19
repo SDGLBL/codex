@@ -176,8 +176,8 @@ fi
 
 push_options=(--atomic)
 push_refspecs=(
-  "${head_sha}:refs/heads/${queue_branch}"
-  "${head_sha}:refs/heads/${main_branch}"
+  "${head_remote_ref}:refs/heads/${queue_branch}"
+  "${head_remote_ref}:refs/heads/${main_branch}"
 )
 
 queue_branch_sha="$(git rev-parse "${queue_remote_ref}")"
@@ -213,7 +213,7 @@ if [[ "${release_mode}" == "release" ]]; then
   queue_base_remote_ref="refs/remotes/${fork_remote}/${queue_base_branch}"
   queue_base_sha="$(git rev-parse "${queue_base_remote_ref}")"
   push_options+=("--force-with-lease=refs/heads/${queue_base_branch}:${queue_base_sha}")
-  push_refspecs+=("${upstream_tag}:refs/heads/${queue_base_branch}")
+  push_refspecs+=("refs/tags/${upstream_tag}:refs/heads/${queue_base_branch}")
 
   internal_tag="internal-${upstream_tag}"
   tag_exists=false
@@ -228,7 +228,7 @@ if [[ "${release_mode}" == "release" ]]; then
 
   if [[ "${tag_exists}" != "true" ]]; then
     git tag -a "${internal_tag}" "${head_sha}" -m "Internal release for ${upstream_tag}"
-    push_refspecs+=("refs/tags/${internal_tag}")
+    push_refspecs+=("refs/tags/${internal_tag}:refs/tags/${internal_tag}")
   fi
 
   release_summary=" and updated ${queue_base_branch} to ${upstream_tag}"
