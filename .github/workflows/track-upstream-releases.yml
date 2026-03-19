@@ -1,4 +1,4 @@
-name: track-upstream-stable
+name: track-upstream-releases
 
 on:
   workflow_dispatch:
@@ -23,17 +23,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve latest upstream stable tag
+      - name: Resolve latest upstream rust tag
         id: upstream
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="$(scripts/internal/latest_upstream_stable.sh)"
-          [[ -n "${tag}" ]] || {
-            echo "failed to resolve upstream stable tag" >&2
-            exit 1
-          }
+          tag="$(scripts/internal/latest_upstream_release.sh openai/codex)"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Check existing sync state
@@ -43,15 +39,17 @@ jobs:
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
           set -euo pipefail
-          internal_tag="internal-${UPSTREAM_TAG}"
-          candidate_branch="candidate/queue/${UPSTREAM_TAG}"
-          tag_exists=false
-          pr_exists=false
 
           if [[ "$(git ls-remote --heads origin queue/internal queue/base/internal | wc -l | tr -d ' ')" != "2" ]]; then
             echo "queue refs are missing; bootstrap queue/internal and queue/base/internal before enabling automatic release tracking" >&2
             exit 1
           fi
+
+          internal_tag="internal-${UPSTREAM_TAG}"
+          candidate_branch="candidate/queue/${UPSTREAM_TAG}"
+          tag_exists=false
+          pr_exists=false
+          other_candidate_pr_exists=false
 
           if git ls-remote --tags origin "${internal_tag}" | grep -q .; then
             tag_exists=true
@@ -61,13 +59,18 @@ jobs:
             pr_exists=true
           fi
 
+          if [[ "$(gh pr list --base queue/internal --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("candidate/queue/") and .headRefName != "'"${candidate_branch}"'")] | length')" != "0" ]]; then
+            other_candidate_pr_exists=true
+          fi
+
           echo "internal_tag=${internal_tag}" >> "$GITHUB_OUTPUT"
           echo "candidate_branch=${candidate_branch}" >> "$GITHUB_OUTPUT"
           echo "tag_exists=${tag_exists}" >> "$GITHUB_OUTPUT"
           echo "pr_exists=${pr_exists}" >> "$GITHUB_OUTPUT"
+          echo "other_candidate_pr_exists=${other_candidate_pr_exists}" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch queue replay workflow
-        if: steps.state.outputs.tag_exists != 'true' && steps.state.outputs.pr_exists != 'true'
+        if: steps.upstream.outputs.tag != '' && steps.state.outputs.tag_exists != 'true' && steps.state.outputs.pr_exists != 'true' && steps.state.outputs.other_candidate_pr_exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}

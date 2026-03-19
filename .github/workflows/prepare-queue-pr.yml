@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: Upstream rust release tag to replay onto the queue, for example rust-v0.116.0
+        description: Upstream rust release tag to replay onto the queue, for example rust-v0.116.0 or rust-v0.116.0-alpha.1
         required: true
         type: string
       mode:
