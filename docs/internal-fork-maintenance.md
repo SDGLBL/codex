@@ -46,7 +46,8 @@ Historical refs such as `patches/internal` and `sync/rust-*` are not part of thi
   - `rehearsal` mode creates `rehearsal/queue/...` plus a `rehearsal-internal-rust-v...` tag for dry-run validation.
 - `.github/workflows/promote-queue-pr.yml`
   - Validates PR approval and checks.
-  - Fast-forwards `queue/internal` and `main` to the PR head.
+  - Promotes `queue/internal` and `main` to the PR head.
+  - Replay candidates may require force-with-lease updates because the queue is rewritten onto the new upstream release tag before review.
   - For replay candidates, also updates `queue/base/internal` to the new upstream tag and creates `internal-rust-vX.Y.Z[-alpha.N|-beta.N]`.
   - Closes the PR after promotion instead of creating a GitHub merge commit.
 - `.github/workflows/internal-rust-release.yml`
