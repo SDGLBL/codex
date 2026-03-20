@@ -1753,9 +1753,11 @@ async fn websocket_harness_with_provider_options(
     let client = ModelClient::new(
         None,
         conversation_id,
+        conversation_id,
         provider.clone(),
         SessionSource::Exec,
         config.model_verbosity,
+        None,
         false,
         runtime_metrics_enabled,
         None,

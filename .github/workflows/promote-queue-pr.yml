@@ -1,0 +1,61 @@
+name: promote-queue-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open queue PR number to promote
+        required: true
+        type: string
+      require_approval:
+        description: Require the PR review decision to be APPROVED before promotion
+        required: false
+        default: true
+        type: boolean
+      require_checks:
+        description: Require PR checks to have completed successfully before promotion
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  promote:
+    if: github.repository == 'SDGLBL/codex'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Require queue promotion token
+        env:
+          INTERNAL_QUEUE_PAT: ${{ secrets.INTERNAL_QUEUE_PAT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${INTERNAL_QUEUE_PAT}" ]] || {
+            echo "missing INTERNAL_QUEUE_PAT secret" >&2
+            exit 1
+          }
+
+      - name: Promote queue PR
+        env:
+          GH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
+          PUSH_TOKEN: ${{ secrets.INTERNAL_QUEUE_PAT }}
+          FORK_REPO: ${{ github.repository }}
+          FORK_URL: ${{ github.server_url }}/${{ github.repository }}
+          REQUIRE_APPROVAL: ${{ inputs.require_approval }}
+          REQUIRE_CHECKS: ${{ inputs.require_checks }}
+        run: |
+          set -euo pipefail
+          scripts/internal/promote_queue_pr.sh "${{ inputs.pr_number }}"

@@ -32,6 +32,7 @@ async fn write_session_with_user_event(codex_home: &Path) -> io::Result<()> {
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
             id: thread_id,
+            wire_session_id: None,
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),

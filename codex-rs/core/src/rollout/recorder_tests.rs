@@ -63,6 +63,7 @@ async fn recorder_materializes_only_after_explicit_persist() -> std::io::Result<
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -162,6 +163,7 @@ async fn metadata_irrelevant_events_touch_state_db_updated_at() -> std::io::Resu
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
+            thread_id,
             thread_id,
             None,
             SessionSource::Cli,

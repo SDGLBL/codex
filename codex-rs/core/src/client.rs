@@ -121,6 +121,7 @@ const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=20
 const RESPONSES_ENDPOINT: &str = "/responses";
 const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
 const MEMORIES_SUMMARIZE_ENDPOINT: &str = "/memories/trace_summarize";
+
 #[cfg(test)]
 pub(crate) const WEBSOCKET_CONNECT_TIMEOUT: Duration =
     Duration::from_millis(crate::model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
@@ -133,10 +134,12 @@ pub(crate) const WEBSOCKET_CONNECT_TIMEOUT: Duration =
 struct ModelClientState {
     auth_manager: Option<Arc<AuthManager>>,
     conversation_id: ThreadId,
+    wire_session_id: ThreadId,
     provider: ModelProviderInfo,
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
+    model_max_output_tokens: Option<i64>,
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
@@ -254,9 +257,11 @@ impl ModelClient {
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         provider: ModelProviderInfo,
         session_source: SessionSource,
         model_verbosity: Option<VerbosityConfig>,
+        model_max_output_tokens: Option<i64>,
         enable_request_compression: bool,
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
@@ -269,10 +274,12 @@ impl ModelClient {
             state: Arc::new(ModelClientState {
                 auth_manager,
                 conversation_id,
+                wire_session_id,
                 provider,
                 auth_env_telemetry,
                 session_source,
                 model_verbosity,
+                model_max_output_tokens,
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
@@ -394,7 +401,7 @@ impl ModelClient {
 
         let mut extra_headers = self.build_subagent_headers();
         extra_headers.extend(build_conversation_headers(Some(
-            self.state.conversation_id.to_string(),
+            self.state.wire_session_id.to_string(),
         )));
         client
             .compact_input(&payload, extra_headers)
@@ -648,6 +655,9 @@ impl ModelClient {
             headers.insert("x-client-request-id", header_value);
         }
         headers.extend(build_conversation_headers(Some(conversation_id)));
+        headers.extend(build_conversation_headers(Some(
+            self.state.wire_session_id.to_string(),
+        )));
         headers.insert(
             OPENAI_BETA_HEADER,
             HeaderValue::from_static(RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE),
@@ -743,6 +753,7 @@ impl ModelClientSession {
             },
             prompt_cache_key,
             text,
+            max_output_tokens: self.client.state.model_max_output_tokens,
         };
         Ok(request)
     }
@@ -761,6 +772,7 @@ impl ModelClientSession {
         let conversation_id = self.client.state.conversation_id.to_string();
         ApiResponsesOptions {
             conversation_id: Some(conversation_id),
+            wire_session_id: Some(self.client.state.wire_session_id.to_string()),
             session_source: Some(self.client.state.session_source.clone()),
             extra_headers: build_responses_headers(
                 self.client.state.beta_features_header.as_deref(),
@@ -1284,8 +1296,8 @@ impl ModelClientSession {
     ///
     /// The caller is responsible for passing per-turn settings explicitly (model selection,
     /// reasoning settings, telemetry context, and turn metadata). This method will prefer the
-    /// Responses WebSocket transport when the provider supports it and it remains healthy, and will
-    /// fall back to the HTTP Responses API transport otherwise.
+    /// Responses WebSocket transport when enabled and healthy, and will fall back to the HTTP
+    /// Responses API transport otherwise.
     pub async fn stream(
         &mut self,
         prompt: &Prompt,
