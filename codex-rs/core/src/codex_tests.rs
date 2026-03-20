@@ -1,5 +1,6 @@
 use super::*;
 use crate::CodexAuth;
+use crate::client::ws_version_from_features;
 use crate::config::ConfigBuilder;
 use crate::config::test_config;
 use crate::config_loader::ConfigLayerStack;
@@ -236,6 +237,7 @@ fn test_model_client_session() -> crate::client::ModelClientSession {
         ),
         codex_protocol::protocol::SessionSource::Exec,
         None,
+        false,
         None,
         false,
         false,
@@ -2507,6 +2509,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             config.model_verbosity,
+            ws_version_from_features(config.as_ref()),
             config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
@@ -3304,6 +3307,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             config.model_verbosity,
+            ws_version_from_features(config.as_ref()),
             config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),

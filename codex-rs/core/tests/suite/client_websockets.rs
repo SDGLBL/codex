@@ -10,6 +10,7 @@ use codex_core::ResponseEvent;
 use codex_core::WireApi;
 use codex_core::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
 use codex_core::features::Feature;
+use codex_core::ws_version_from_features;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_otel::current_span_w3c_trace_context;
@@ -1757,6 +1758,7 @@ async fn websocket_harness_with_provider_options(
         provider.clone(),
         SessionSource::Exec,
         config.model_verbosity,
+        ws_version_from_features(&config),
         None,
         false,
         runtime_metrics_enabled,

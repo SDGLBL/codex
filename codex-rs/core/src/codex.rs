@@ -18,6 +18,7 @@ use crate::analytics_client::InvocationType;
 use crate::analytics_client::build_track_events_context;
 use crate::apps::render_apps_section;
 use crate::auth_env_telemetry::collect_auth_env_telemetry;
+use crate::client::ws_version_from_features;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
 use crate::compact::InitialContextInjection;
@@ -1834,6 +1835,7 @@ impl Session {
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
                 config.model_verbosity,
+                ws_version_from_features(config.as_ref()),
                 config.model_max_output_tokens,
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
@@ -6320,7 +6322,10 @@ async fn run_sampling_request(
             // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
             let report_error = retries > 1
                 || cfg!(debug_assertions)
-                || !sess.services.model_client.responses_websocket_enabled();
+                || !sess
+                    .services
+                    .model_client
+                    .responses_websocket_enabled(&turn_context.model_info);
             if report_error {
                 // Surface retry information to any UI/front‑end so the
                 // user understands what is happening instead of staring
