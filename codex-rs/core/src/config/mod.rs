@@ -106,6 +106,7 @@ use toml_edit::value;
 
 pub(crate) mod agent_roles;
 pub mod edit;
+mod installer_profile;
 mod managed_features;
 mod network_proxy_spec;
 mod permissions;
@@ -118,6 +119,8 @@ pub use codex_config::ConstraintError;
 pub use codex_config::ConstraintResult;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
 
+pub use installer_profile::BootstrapInternalProfileResult;
+pub use installer_profile::bootstrap_internal_profile;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
