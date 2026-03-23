@@ -20,6 +20,7 @@ Useful environment variables:
 CODEX_INSTALL_DIR="$HOME/bin"
 CODEX_INSTALL_AK="your-ak"
 CODEX_INSTALL_AZURE_BASE_URL="https://your-internal-endpoint"
+CODEX_INSTALL_MODEL="gpt-5.4-2026-03-05"
 ```
 
 Notes:
@@ -27,6 +28,7 @@ Notes:
 - The Unix installer downloads the native release binary for your platform and installs the bundled `rg`.
 - Linux always selects the musl release assets (`*-unknown-linux-musl`).
 - `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL` are optional for interactive installs. If either is unset, the installer prompts for it and then bootstraps the internal Azure-backed `internal` profile in `~/.codex/config.toml`.
+- `CODEX_INSTALL_MODEL` is optional. If unset, the installer writes `gpt-5.4-2026-03-05` into `profiles.internal.model`.
 - Non-interactive installs must set both `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL`.
 - On Windows, use `install.ps1` from the same release page instead of `install.sh`.
 

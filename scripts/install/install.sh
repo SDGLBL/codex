@@ -11,6 +11,7 @@ LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPO
 INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
+INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
 path_action="already"
 path_profile=""
 
@@ -414,7 +415,11 @@ chmod 0755 "$INSTALL_DIR/rg"
 prompt_for_install_config
 
 step "Configuring internal profile"
-printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+if [ -n "$INSTALL_MODEL" ]; then
+  printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
+else
+  printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+fi
 
 add_to_path
 

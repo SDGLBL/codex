@@ -109,12 +109,23 @@ fn run_installer(
     platform: &PlatformFixture<'_>,
     extra_path_prefix: Option<&Path>,
 ) -> Result<String> {
+    run_installer_with_model(home, release_base_url, platform, extra_path_prefix, None)
+}
+
+fn run_installer_with_model(
+    home: &Path,
+    release_base_url: &str,
+    platform: &PlatformFixture<'_>,
+    extra_path_prefix: Option<&Path>,
+    install_model: Option<&str>,
+) -> Result<String> {
     run_installer_with_shell(
         home,
         release_base_url,
         platform,
         extra_path_prefix,
         "/bin/sh",
+        install_model,
     )
 }
 
@@ -124,6 +135,7 @@ fn run_installer_with_shell(
     platform: &PlatformFixture<'_>,
     extra_path_prefix: Option<&Path>,
     shell: &str,
+    install_model: Option<&str>,
 ) -> Result<String> {
     let mut path = base_test_path();
     if let Some(prefix) = extra_path_prefix {
@@ -142,6 +154,9 @@ fn run_installer_with_shell(
         .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
         .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
         .env("PATH", path);
+    if let Some(install_model) = install_model {
+        command.env("CODEX_INSTALL_MODEL", install_model);
+    }
     if let Some(proc_translated) = platform.proc_translated {
         command.env("CODEX_INSTALL_PROC_TRANSLATED", proc_translated);
     }
@@ -501,8 +516,14 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
     permissions.set_mode(0o400);
     fs::set_permissions(&zshrc_path, permissions)?;
 
-    let stdout =
-        run_installer_with_shell(home.path(), &release_base_url, &platform, None, "/bin/zsh")?;
+    let stdout = run_installer_with_shell(
+        home.path(),
+        &release_base_url,
+        &platform,
+        None,
+        "/bin/zsh",
+        None,
+    )?;
 
     let zprofile_path = home.path().join(".zprofile");
     assert!(stdout.contains(&format!(
@@ -511,6 +532,36 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
     )));
     assert!(zprofile_path.is_file());
     assert!(fs::read_to_string(&zprofile_path)?.contains("export PATH=\""));
+
+    Ok(())
+}
+
+#[test]
+fn install_script_honors_codex_install_model_override() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+
+    run_installer_with_model(
+        home.path(),
+        &release_base_url,
+        &platform,
+        None,
+        Some("gpt-5.4"),
+    )?;
+
+    let config = read_installed_config(home.path())?;
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("gpt-5.4")
+    );
 
     Ok(())
 }
