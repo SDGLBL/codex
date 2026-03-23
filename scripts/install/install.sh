@@ -181,6 +181,17 @@ can_write_dir() {
   [ -d "$probe" ] && [ -w "$probe" ]
 }
 
+can_write_path() {
+  path="$1"
+
+  if [ -e "$path" ]; then
+    [ -w "$path" ]
+    return
+  fi
+
+  can_write_dir "$(dirname "$path")"
+}
+
 resolve_install_dir() {
   if [ -n "${CODEX_INSTALL_DIR:-}" ]; then
     printf '%s\n' "$CODEX_INSTALL_DIR"
@@ -216,28 +227,42 @@ add_to_path() {
       ;;
   esac
 
-  profile="$HOME/.profile"
+  path_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+  set -- "$HOME/.profile"
   case "${SHELL:-}" in
     */zsh)
-      profile="$HOME/.zshrc"
+      set -- "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.profile"
       ;;
     */bash)
-      profile="$HOME/.bashrc"
+      set -- "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"
       ;;
   esac
 
-  path_profile="$profile"
-  path_line="export PATH=\"$INSTALL_DIR:\$PATH\""
-  if [ -f "$profile" ] && grep -F "$path_line" "$profile" >/dev/null 2>&1; then
-    path_action="configured"
-    return
-  fi
+  for candidate in "$@"; do
+    if [ -f "$candidate" ] && grep -F "$path_line" "$candidate" >/dev/null 2>&1; then
+      path_profile="$candidate"
+      path_action="configured"
+      return
+    fi
+  done
 
-  {
-    printf '\n# Added by Codex installer\n'
-    printf '%s\n' "$path_line"
-  } >>"$profile"
-  path_action="added"
+  for candidate in "$@"; do
+    if can_write_path "$candidate"; then
+      path_profile="$candidate"
+      if {
+        printf '\n# Added by Codex installer\n'
+        printf '%s\n' "$path_line"
+      } >>"$path_profile" 2>/dev/null; then
+        path_action="added"
+      else
+        path_action="manual"
+        path_profile=""
+      fi
+      return
+    fi
+  done
+
+  path_action="manual"
 }
 
 prompt_for_install_config() {
@@ -403,6 +428,11 @@ case "$path_action" in
     step "PATH is already configured for future shells in $path_profile"
     step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
     step "Or open a new terminal and run: codex"
+    ;;
+  manual)
+    step "Could not update your shell profile automatically"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
+    step "To persist it, add this line to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
   *)
     step "$INSTALL_DIR is already on PATH"

@@ -109,6 +109,22 @@ fn run_installer(
     platform: &PlatformFixture<'_>,
     extra_path_prefix: Option<&Path>,
 ) -> Result<String> {
+    run_installer_with_shell(
+        home,
+        release_base_url,
+        platform,
+        extra_path_prefix,
+        "/bin/sh",
+    )
+}
+
+fn run_installer_with_shell(
+    home: &Path,
+    release_base_url: &str,
+    platform: &PlatformFixture<'_>,
+    extra_path_prefix: Option<&Path>,
+    shell: &str,
+) -> Result<String> {
     let mut path = base_test_path();
     if let Some(prefix) = extra_path_prefix {
         path = format!("{}:{path}", prefix.display());
@@ -119,7 +135,7 @@ fn run_installer(
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home)
-        .env("SHELL", "/bin/sh")
+        .env("SHELL", shell)
         .env("CODEX_INSTALL_AK", INSTALL_AK)
         .env("CODEX_INSTALL_AZURE_BASE_URL", INSTALL_AZURE_BASE_URL)
         .env("CODEX_INSTALL_RELEASE_BASE_URL", release_base_url)
@@ -463,6 +479,38 @@ fn install_script_reuses_existing_codex_install_dir() -> Result<()> {
             .exists()
     );
     assert!(!home.path().join(".profile").exists());
+
+    Ok(())
+}
+
+#[test]
+fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Darwin",
+        uname_m: "aarch64",
+        proc_translated: None,
+        vendor_target: "aarch64-apple-darwin",
+        platform_label: "macOS (Apple Silicon)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+    let zshrc_path = home.path().join(".zshrc");
+    fs::write(&zshrc_path, "# managed elsewhere\n")?;
+    let mut permissions = fs::metadata(&zshrc_path)?.permissions();
+    permissions.set_mode(0o400);
+    fs::set_permissions(&zshrc_path, permissions)?;
+
+    let stdout =
+        run_installer_with_shell(home.path(), &release_base_url, &platform, None, "/bin/zsh")?;
+
+    let zprofile_path = home.path().join(".zprofile");
+    assert!(stdout.contains(&format!(
+        "PATH updated for future shells in {}",
+        zprofile_path.display()
+    )));
+    assert!(zprofile_path.is_file());
+    assert!(fs::read_to_string(&zprofile_path)?.contains("export PATH=\""));
 
     Ok(())
 }
