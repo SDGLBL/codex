@@ -10,7 +10,8 @@ tags="$(
       .[]
       | select(
           .draft == false
-          and (.tag_name | test("^rust-v[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta)(\\.[0-9]+)?)?$"))
+          and .prerelease == false
+          and (.tag_name | test("^rust-v[0-9]+\\.[0-9]+\\.[0-9]+$"))
         )
       | .tag_name
     '

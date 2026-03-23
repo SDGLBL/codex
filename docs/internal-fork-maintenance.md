@@ -5,18 +5,18 @@ This document describes the patch-queue-first internal release flow for `SDGLBL/
 ## Branches
 
 - `queue/internal`: the only authoritative fork patch queue. It must stay linear and contain only fork-only patch commits on top of the current upstream `rust-v*` release tag.
-- `queue/base/internal`: movable base ref for the current queue. It should point at the current upstream `rust-v*` release tag that `queue/internal` currently replays onto, including alpha and beta releases when those are the latest followed tag.
+- `queue/base/internal`: movable base ref for the current queue. It should point at the current upstream stable `rust-v*` release tag that `queue/internal` currently replays onto.
 - `main`: publish mirror for `queue/internal`. Promotion fast-forwards or force-updates `main` to the validated queue head; direct development on `main` is no longer part of the flow.
-- `candidate/queue/rust-vX.Y.Z[-alpha.N|-beta.N]`: official replay candidate branch created from the latest upstream release tag selected for replay and populated by cherry-picking the current queue patch stack.
-- `rehearsal/queue/rust-vX.Y.Z[-alpha.N|-beta.N]-<suffix>`: isolated replay branch used to validate the workflow against an existing upstream release without updating official refs.
+- `candidate/queue/rust-vX.Y.Z`: official replay candidate branch created from the latest upstream stable release tag selected for replay and populated by cherry-picking the current queue patch stack.
+- `rehearsal/queue/rust-vX.Y.Z-<suffix>`: isolated replay branch used to validate the workflow against an existing upstream stable release without updating official refs.
 
 Historical refs such as `patches/internal` and `sync/rust-*` are not part of this flow. If they still exist on the remote, archive their current heads first and then delete them; no queue-first automation reads them.
 
 ## Tags And Releases
 
-- Upstream source of truth: `openai/codex` `rust-v*` releases, including prereleases.
-- Official internal release tags: `internal-rust-vX.Y.Z[-alpha.N|-beta.N]`.
-- Rehearsal validation tags: `rehearsal-internal-rust-vX.Y.Z[-alpha.N|-beta.N]-<suffix>`.
+- Upstream source of truth: `openai/codex` stable `rust-v*` releases.
+- Official internal release tags: `internal-rust-vX.Y.Z`.
+- Rehearsal validation tags: `rehearsal-internal-rust-vX.Y.Z-<suffix>`.
 - GitHub Release name: `<upstream-version>-internal`.
 - Release notes are generated from the replayed patch queue relative to the upstream tag.
 
@@ -34,11 +34,11 @@ Historical refs such as `patches/internal` and `sync/rust-*` are not part of thi
   - Can optionally rewrite `main` so it matches the bootstrapped queue head.
 - `.github/workflows/track-upstream-releases.yml`
   - Runs every 4 hours or on manual dispatch.
-  - Resolves the latest upstream `rust-v*` release tag, including alpha and beta prereleases.
+  - Resolves the latest upstream stable `rust-v*` release tag.
   - Dispatches `prepare-queue-pr.yml` in `official` mode when there is no matching `internal-rust-v*` tag and no open candidate PR for that tag.
   - Waits if a different `candidate/queue/...` PR is already open so the automation does not open multiple replay PRs at once.
 - `.github/workflows/prepare-queue-pr.yml`
-  - `official` mode creates or refreshes `candidate/queue/rust-vX.Y.Z[-alpha.N|-beta.N]`.
+  - `official` mode creates or refreshes `candidate/queue/rust-vX.Y.Z`.
   - Replays `queue/base/internal..queue/internal` onto the upstream tag with `cherry-pick -x`.
   - Drops replayed `codex-rs/Cargo.lock` hunks and regenerates the lockfile after replay so queue commits stay base-agnostic across releases.
   - Uses `INTERNAL_QUEUE_PAT` for pushes so rehearsal and official tags can trigger downstream release workflows.
@@ -48,7 +48,7 @@ Historical refs such as `patches/internal` and `sync/rust-*` are not part of thi
   - Validates PR approval and checks.
   - Promotes `queue/internal` and `main` to the PR head.
   - Replay candidates may require force-with-lease updates because the queue is rewritten onto the new upstream release tag before review.
-  - For replay candidates, also updates `queue/base/internal` to the new upstream tag and creates `internal-rust-vX.Y.Z[-alpha.N|-beta.N]`.
+  - For replay candidates, also updates `queue/base/internal` to the new upstream tag and creates `internal-rust-vX.Y.Z`.
   - Closes the PR after promotion instead of creating a GitHub merge commit.
 - `.github/workflows/internal-rust-release.yml`
   - Builds official releases from `internal-rust-v*` tag pushes.
@@ -102,21 +102,21 @@ FORK_REPO=SDGLBL/codex \
 FORK_REMOTE=fork \
 PUSH_BRANCH=false \
 OPEN_PR=false \
-scripts/internal/prepare_queue_pr.sh rust-v0.116.0-alpha.1
+scripts/internal/prepare_queue_pr.sh rust-v0.116.0
 ```
 
 - Dispatch the official replay remotely:
 
 ```bash
 gh workflow run prepare-queue-pr.yml -R SDGLBL/codex \
-  -f upstream_tag=rust-v0.116.0-alpha.1 \
+  -f upstream_tag=rust-v0.116.0 \
   -f mode=official
 ```
 
 - Inspect the open replay PR:
 
 ```bash
-gh pr list -R SDGLBL/codex --base queue/internal --head candidate/queue/rust-v0.116.0-alpha.1
+gh pr list -R SDGLBL/codex --base queue/internal --head candidate/queue/rust-v0.116.0
 ```
 
 - After review and checks succeed, promote it:
@@ -131,14 +131,14 @@ Rehearsal lets you validate the replay and build pipeline against any upstream r
 
 ```bash
 gh workflow run prepare-queue-pr.yml -R SDGLBL/codex \
-  -f upstream_tag=rust-v0.116.0-alpha.1 \
+  -f upstream_tag=rust-v0.116.0 \
   -f mode=rehearsal
 ```
 
 That creates:
 
-- `rehearsal/queue/rust-v0.116.0-alpha.1-<suffix>`
-- `rehearsal-internal-rust-v0.116.0-alpha.1-<suffix>`
+- `rehearsal/queue/rust-v0.116.0-<suffix>`
+- `rehearsal-internal-rust-v0.116.0-<suffix>`
 
 The rehearsal tag triggers `internal-rust-release.yml`, which uploads a dry-run artifact bundle instead of publishing a GitHub Release.
 
@@ -150,7 +150,7 @@ The rehearsal tag triggers `internal-rust-release.yml`, which uploads a dry-run 
 
   ```bash
   gh pr checkout <pr-number> -R SDGLBL/codex
-  git fetch https://github.com/openai/codex refs/tags/rust-vX.Y.Z[-alpha.N|-beta.N]:refs/tags/rust-vX.Y.Z[-alpha.N|-beta.N]
+  git fetch https://github.com/openai/codex refs/tags/rust-vX.Y.Z:refs/tags/rust-vX.Y.Z
   git cherry-pick -x <failing-commit>
   ```
 

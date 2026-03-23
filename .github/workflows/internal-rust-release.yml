@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: Upstream rust release tag, for example rust-v0.114.0 or rust-v0.116.0-alpha.1
+        description: Upstream rust release tag, for example rust-v0.114.0
         required: true
         type: string
       release_ref:
@@ -53,9 +53,15 @@ jobs:
 
           parse_tag() {
             local value="$1"
-            if [[ "${value}" =~ ^(rehearsal-)?internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?)(-.+)?$ ]]; then
-              TAG_REHEARSAL="${BASH_REMATCH[1]}"
-              TAG_UPSTREAM="${BASH_REMATCH[2]}"
+            if [[ "${value}" =~ ^internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              TAG_REHEARSAL=""
+              TAG_UPSTREAM="${BASH_REMATCH[1]}"
+              return 0
+            fi
+
+            if [[ "${value}" =~ ^rehearsal-internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)-(.+)$ ]]; then
+              TAG_REHEARSAL="rehearsal-"
+              TAG_UPSTREAM="${BASH_REMATCH[1]}"
               return 0
             fi
             return 1
@@ -84,7 +90,7 @@ jobs:
             publish="${INPUT_PUBLISH:-false}"
           fi
 
-          if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
+          if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "unexpected upstream tag format: ${upstream_tag}" >&2
             exit 1
           fi
@@ -306,7 +312,7 @@ jobs:
           tag_name: ${{ needs.meta.outputs.internal_tag }}
           body_path: ${{ steps.notes.outputs.path }}
           files: dist/**
-          prerelease: ${{ contains(needs.meta.outputs.version, '-') }}
+          prerelease: false
 
       - name: Upload dry-run bundle
         if: ${{ needs.meta.outputs.publish != 'true' }}
