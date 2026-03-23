@@ -59,7 +59,7 @@ jobs:
             pr_exists=true
           fi
 
-          if [[ "$(gh pr list --base queue/internal --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("candidate/queue/") and .headRefName != "'"${candidate_branch}"'")] | length')" != "0" ]]; then
+          if [[ "$(gh pr list --base queue/internal --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("candidate/queue/")) | select(.headRefName != "'"${candidate_branch}"'")] | length')" != "0" ]]; then
             other_candidate_pr_exists=true
           fi
 

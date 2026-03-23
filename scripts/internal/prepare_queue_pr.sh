@@ -26,7 +26,7 @@ effective_rehearsal_suffix=""
 cargo_lock_path="codex-rs/Cargo.lock"
 cargo_manifest_path="codex-rs/Cargo.toml"
 
-if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
+if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "unexpected upstream tag format: ${upstream_tag}" >&2
   exit 1
 fi

@@ -2,7 +2,7 @@
 
 This runbook is the concrete "start from zero and recover the replay" guide for the queue-first internal fork flow.
 
-It complements [docs/internal-fork-maintenance.md](./internal-fork-maintenance.md), which defines the steady-state workflow. This file focuses on the preserved `rust-v0.115.0` conflict case and on the exact recovery procedure to use when a future replay stops on conflicts. The same recovery pattern applies to prerelease tags such as `rust-v0.116.0-alpha.1`; substitute the target upstream tag and candidate branch names as needed.
+It complements [docs/internal-fork-maintenance.md](./internal-fork-maintenance.md), which defines the steady-state workflow. This file focuses on the preserved `rust-v0.115.0` conflict case and on the exact recovery procedure to use when a future replay stops on conflicts. The same recovery pattern applies to later stable tags; substitute the target upstream tag and candidate branch names as needed.
 
 ## Preserved Refs
 
@@ -49,7 +49,7 @@ The remaining queue at that point was:
 
 ## Quick Restart From Zero
 
-When a replay fails again in the future, use this exact sequence. For later tags, replace `rust-v0.115.0` and the rehearsal branch name with the target `rust-vX.Y.Z[-alpha.N|-beta.N]` you are recovering:
+When a replay fails again in the future, use this exact sequence. For later tags, replace `rust-v0.115.0` and the rehearsal branch name with the target `rust-vX.Y.Z` you are recovering:
 
 ```bash
 git fetch origin
@@ -166,5 +166,5 @@ Swap `release_ref` and `internal_tag` to the branch/tag you actually resolved.
 ## Operational Notes
 
 - `rehearsal` mode does not create a PR. That is expected.
-- `official` mode creates `candidate/queue/rust-vX.Y.Z[-alpha.N|-beta.N]` and opens a PR to `queue/internal`.
+- `official` mode creates `candidate/queue/rust-vX.Y.Z` and opens a PR to `queue/internal`.
 - `INTERNAL_QUEUE_PAT` must exist if you want pushed rehearsal or official tags to trigger downstream `internal-rust-release` automatically.

@@ -146,9 +146,14 @@ fi
 
 release_mode="patch"
 upstream_tag=""
-if [[ "${head_ref}" =~ ^candidate/queue/(rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?)$ ]]; then
-  release_mode="release"
-  upstream_tag="${BASH_REMATCH[1]}"
+if [[ "${head_ref}" =~ ^candidate/queue/(.+)$ ]]; then
+  if [[ "${head_ref}" =~ ^candidate/queue/(rust-v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    release_mode="release"
+    upstream_tag="${BASH_REMATCH[1]}"
+  else
+    echo "candidate queue branches must target a stable upstream release: ${head_ref}" >&2
+    exit 1
+  fi
 fi
 
 if [[ "${head_ref}" =~ ^rehearsal/queue/ ]]; then
