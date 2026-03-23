@@ -36,6 +36,7 @@ use supports_color::Stream;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod app_cmd;
+mod debug_bootstrap_internal_profile;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod desktop_app;
 mod marketplace_cmd;
@@ -44,6 +45,8 @@ mod responses_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
+use crate::debug_bootstrap_internal_profile::DebugBootstrapInternalProfileCommand;
+use crate::debug_bootstrap_internal_profile::run_debug_bootstrap_internal_profile_command;
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 use crate::responses_cmd::ResponsesCommand;
@@ -213,6 +216,10 @@ enum DebugSubcommand {
 
     /// Render the model-visible prompt input list as JSON.
     PromptInput(DebugPromptInputCommand),
+
+    /// Internal: bootstrap the internal profile used by the installer.
+    #[clap(hide = true, name = "bootstrap-internal-profile")]
+    BootstrapInternalProfile(DebugBootstrapInternalProfileCommand),
 
     /// Internal: reset local memory state for a fresh start.
     #[clap(hide = true)]
@@ -1037,6 +1044,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     arg0_paths.clone(),
                 )
                 .await?;
+            }
+            DebugSubcommand::BootstrapInternalProfile(cmd) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "debug bootstrap-internal-profile",
+                )?;
+                run_debug_bootstrap_internal_profile_command(cmd)?;
             }
             DebugSubcommand::ClearMemories => {
                 reject_remote_mode_for_subcommand(

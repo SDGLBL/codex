@@ -1,5 +1,35 @@
 ## Installing & building
 
+### Install from GitHub releases
+
+The recommended install path for this fork is:
+
+```bash
+curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash
+```
+
+Pin a specific version:
+
+```bash
+curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash -s -- 0.104.0
+```
+
+Useful environment variables:
+
+```bash
+CODEX_INSTALL_DIR="$HOME/bin"
+CODEX_INSTALL_AK="your-ak"
+CODEX_INSTALL_AZURE_BASE_URL="https://your-internal-endpoint"
+```
+
+Notes:
+
+- The Unix installer downloads the native release binary for your platform and installs the bundled `rg`.
+- Linux always selects the musl release assets (`*-unknown-linux-musl`).
+- `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL` are optional for interactive installs. If either is unset, the installer prompts for it and then bootstraps the internal Azure-backed `internal` profile in `~/.codex/config.toml`.
+- Non-interactive installs must set both `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL`.
+- On Windows, use `install.ps1` from the same release page instead of `install.sh`.
+
 ### System requirements
 
 | Requirement                 | Details                                                         |
