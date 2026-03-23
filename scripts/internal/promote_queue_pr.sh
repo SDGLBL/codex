@@ -214,11 +214,13 @@ if [[ "${release_mode}" == "release" ]]; then
     exit 1
   }
   git fetch --quiet "${upstream_remote}" "refs/tags/${upstream_tag}:refs/tags/${upstream_tag}"
+  # Branch refs must point at commits, so peel annotated release tags first.
+  upstream_commit_sha="$(git rev-parse "refs/tags/${upstream_tag}^{}")"
 
   queue_base_remote_ref="refs/remotes/${fork_remote}/${queue_base_branch}"
   queue_base_sha="$(git rev-parse "${queue_base_remote_ref}")"
   push_options+=("--force-with-lease=refs/heads/${queue_base_branch}:${queue_base_sha}")
-  push_refspecs+=("refs/tags/${upstream_tag}:refs/heads/${queue_base_branch}")
+  push_refspecs+=("${upstream_commit_sha}:refs/heads/${queue_base_branch}")
 
   internal_tag="internal-${upstream_tag}"
   tag_exists=false
