@@ -60,7 +60,6 @@ Each GitHub Release contains many executables, but in practice, you likely want 
   - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
 - Linux
   - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
 
 Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
 

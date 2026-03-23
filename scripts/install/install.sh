@@ -6,6 +6,7 @@ VERSION="${1:-latest}"
 REPOSITORY="${CODEX_INSTALL_REPOSITORY:-SDGLBL/codex}"
 RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download}"
 LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
+LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPOSITORY/releases/latest/download/install.sh}"
 INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
@@ -68,6 +69,34 @@ download_text() {
   exit 1
 }
 
+resolve_version_from_latest_install_url() {
+  if command -v curl >/dev/null 2>&1; then
+    effective_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_INSTALL_URL" 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    effective_url="$(wget -q -O /dev/null --server-response "$LATEST_INSTALL_URL" 2>&1 | sed -n 's/^[[:space:]]*Location: //p' | tail -n 1 | tr -d '\r')"
+    if [ -z "$effective_url" ]; then
+      effective_url="$LATEST_INSTALL_URL"
+    fi
+  else
+    effective_url=""
+  fi
+
+  if [ -z "$effective_url" ]; then
+    return 1
+  fi
+
+  tag_candidate="${effective_url%/install.sh}"
+  tag_candidate="${tag_candidate##*/}"
+  case "$tag_candidate" in
+    rust-v*)
+      printf '%s\n' "${tag_candidate#rust-v}"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "$1 is required to install Codex." >&2
@@ -87,8 +116,15 @@ resolve_version() {
     return
   fi
 
-  release_json="$(download_text "$LATEST_RELEASE_URL")"
+  release_json="$(download_text "$LATEST_RELEASE_URL" 2>/dev/null || true)"
   resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
+
+  if [ -n "$resolved" ]; then
+    printf '%s\n' "$resolved"
+    return
+  fi
+
+  resolved="$(resolve_version_from_latest_install_url || true)"
 
   if [ -z "$resolved" ]; then
     echo "Failed to resolve the latest Codex release version." >&2
@@ -262,21 +298,17 @@ fi
 
 if [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="darwin-arm64"
     vendor_target="aarch64-apple-darwin"
     platform_label="macOS (Apple Silicon)"
   else
-    npm_tag="darwin-x64"
     vendor_target="x86_64-apple-darwin"
     platform_label="macOS (Intel)"
   fi
 else
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="linux-arm64"
-    vendor_target="aarch64-unknown-linux-musl"
-    platform_label="Linux (ARM64)"
+    echo "Linux (ARM64) is not currently published for the internal release installer." >&2
+    exit 1
   else
-    npm_tag="linux-x64"
     vendor_target="x86_64-unknown-linux-musl"
     platform_label="Linux (x64)"
   fi
@@ -294,9 +326,9 @@ step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
 native_asset="codex-$vendor_target.tar.gz"
-npm_asset="codex-npm-$npm_tag-$resolved_version.tgz"
+rg_asset="rg-$vendor_target.tar.gz"
 native_download_url="$(release_url_for_asset "$native_asset" "$resolved_version")"
-npm_download_url="$(release_url_for_asset "$npm_asset" "$resolved_version")"
+rg_download_url="$(release_url_for_asset "$rg_asset" "$resolved_version")"
 
 step "Resolved version: $resolved_version"
 
@@ -307,25 +339,25 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 native_archive_path="$tmp_dir/$native_asset"
-npm_archive_path="$tmp_dir/$npm_asset"
+rg_archive_path="$tmp_dir/$rg_asset"
 native_extract_dir="$tmp_dir/native"
-npm_extract_dir="$tmp_dir/npm"
+rg_extract_dir="$tmp_dir/rg"
 
-mkdir -p "$native_extract_dir" "$npm_extract_dir"
+mkdir -p "$native_extract_dir" "$rg_extract_dir"
 
 step "Downloading Codex CLI"
 download_file "$native_download_url" "$native_archive_path"
 
 step "Downloading bundled rg"
-download_file "$npm_download_url" "$npm_archive_path"
+download_file "$rg_download_url" "$rg_archive_path"
 
 tar -xzf "$native_archive_path" -C "$native_extract_dir"
-tar -xzf "$npm_archive_path" -C "$npm_extract_dir"
+tar -xzf "$rg_archive_path" -C "$rg_extract_dir"
 
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp "$native_extract_dir/codex-$vendor_target" "$INSTALL_DIR/codex"
-cp "$npm_extract_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
+cp "$rg_extract_dir/rg" "$INSTALL_DIR/rg"
 chmod 0755 "$INSTALL_DIR/codex"
 chmod 0755 "$INSTALL_DIR/rg"
 
