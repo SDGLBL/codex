@@ -4,12 +4,28 @@ on:
   push:
     tags:
       - "internal-rust-v*.*.*"
+      - "rehearsal-internal-rust-v*"
   workflow_dispatch:
     inputs:
       upstream_tag:
         description: Upstream rust release tag, for example rust-v0.114.0
         required: true
         type: string
+      release_ref:
+        description: Branch or tag to build from; defaults to main
+        required: false
+        default: main
+        type: string
+      internal_tag:
+        description: Optional internal tag name to publish against
+        required: false
+        default: ""
+        type: string
+      publish:
+        description: Publish a real GitHub Release instead of a dry-run bundle
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -22,24 +38,60 @@ jobs:
       upstream_tag: ${{ steps.meta.outputs.upstream_tag }}
       version: ${{ steps.meta.outputs.version }}
       publish: ${{ steps.meta.outputs.publish }}
+      release_ref: ${{ steps.meta.outputs.release_ref }}
     steps:
       - name: Compute release metadata
         id: meta
+        env:
+          INPUT_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          INPUT_RELEASE_REF: ${{ inputs.release_ref }}
+          INPUT_INTERNAL_TAG: ${{ inputs.internal_tag }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
+
+          parse_tag() {
+            local value="$1"
+            if [[ "${value}" =~ ^internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              TAG_REHEARSAL=""
+              TAG_UPSTREAM="${BASH_REMATCH[1]}"
+              return 0
+            fi
+
+            if [[ "${value}" =~ ^rehearsal-internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)-(.+)$ ]]; then
+              TAG_REHEARSAL="rehearsal-"
+              TAG_UPSTREAM="${BASH_REMATCH[1]}"
+              return 0
+            fi
+            return 1
+          }
+
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            release_ref="${GITHUB_REF_NAME}"
             internal_tag="${GITHUB_REF_NAME}"
-            upstream_tag="${internal_tag#internal-}"
-            publish=true
+            parse_tag "${internal_tag}" || {
+              echo "unexpected internal tag format: ${internal_tag}" >&2
+              exit 1
+            }
+            upstream_tag="${TAG_UPSTREAM}"
+            if [[ -n "${TAG_REHEARSAL}" ]]; then
+              publish=false
+            else
+              publish=true
+            fi
           else
-            upstream_tag="${{ inputs.upstream_tag }}"
-            internal_tag="internal-${upstream_tag}"
-            publish=false
+            upstream_tag="${INPUT_UPSTREAM_TAG}"
+            release_ref="${INPUT_RELEASE_REF:-main}"
+            internal_tag="${INPUT_INTERNAL_TAG:-}"
+            if [[ -z "${internal_tag}" ]]; then
+              internal_tag="internal-${upstream_tag}"
+            fi
+            publish="${INPUT_PUBLISH:-false}"
           fi
 
-          if [[ ! "${internal_tag}" =~ ^internal-rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]]; then
-            echo "unexpected internal tag format: ${internal_tag}" >&2
+          if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "unexpected upstream tag format: ${upstream_tag}" >&2
             exit 1
           fi
 
@@ -47,6 +99,7 @@ jobs:
           echo "upstream_tag=${upstream_tag}" >> "$GITHUB_OUTPUT"
           echo "version=${upstream_tag#rust-v}" >> "$GITHUB_OUTPUT"
           echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+          echo "release_ref=${release_ref}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: meta
@@ -68,8 +121,13 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.meta.outputs.release_ref }}
 
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}
@@ -87,7 +145,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
         name: Use hermetic Cargo home (musl)
         shell: bash
         run: |
@@ -98,19 +156,19 @@ jobs:
           echo "${cargo_home}/bin" >> "$GITHUB_PATH"
           : > "${cargo_home}/config.toml"
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
         name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.14.0
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
         name: Install musl build tools
         env:
           TARGET: ${{ matrix.target }}
         run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
         name: Configure rustc UBSan wrapper (musl host)
         shell: bash
         run: |
@@ -133,7 +191,7 @@ jobs:
           echo "RUSTC_WRAPPER=${wrapper}" >> "$GITHUB_ENV"
           echo "RUSTC_WORKSPACE_WRAPPER=" >> "$GITHUB_ENV"
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
         name: Clear sanitizer flags (musl)
         shell: bash
         run: |
@@ -213,10 +271,31 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.meta.outputs.release_ref }}
 
       - uses: actions/download-artifact@v8
         with:
           path: dist
+
+      - uses: facebook/install-dotslash@v2
+
+      - name: Stage rg release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rg_root="${RUNNER_TEMP}/internal-rg"
+          mkdir -p "${rg_root}"
+          python3 codex-cli/scripts/install_native_deps.py --component rg "${rg_root}"
+
+          for target in \
+            x86_64-unknown-linux-musl \
+            aarch64-unknown-linux-musl \
+            x86_64-apple-darwin \
+            aarch64-apple-darwin
+          do
+            rg_dir="${rg_root}/vendor/${target}/path"
+            tar -C "${rg_dir}" -czf "dist/rg-${target}.tar.gz" rg
+          done
 
       - name: Prepare static release assets
         shell: bash
@@ -231,16 +310,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin patches/internal
+          git fetch https://github.com/openai/codex "refs/tags/${{ needs.meta.outputs.upstream_tag }}:refs/tags/${{ needs.meta.outputs.upstream_tag }}"
 
           notes_path="${RUNNER_TEMP}/release-notes.md"
           {
             echo "Internal Codex CLI release for upstream \`${{ needs.meta.outputs.upstream_tag }}\`."
             echo
+            echo "- release ref: \`${{ needs.meta.outputs.release_ref }}\`"
+            echo "- release tag: \`${{ needs.meta.outputs.internal_tag }}\`"
+            echo
             echo "## Patch Stack"
             while read -r commit; do
               git log -1 --format='- `%h` %s' "${commit}"
-            done < <(scripts/internal/patch_stack_commits.sh origin/patches/internal HEAD)
+            done < <(scripts/internal/patch_stack_commits.sh HEAD "${{ needs.meta.outputs.upstream_tag }}")
           } > "${notes_path}"
           echo "path=${notes_path}" >> "$GITHUB_OUTPUT"
 
@@ -252,7 +334,7 @@ jobs:
           tag_name: ${{ needs.meta.outputs.internal_tag }}
           body_path: ${{ steps.notes.outputs.path }}
           files: dist/**
-          prerelease: ${{ contains(needs.meta.outputs.version, '-') }}
+          prerelease: false
 
       - name: Upload dry-run bundle
         if: ${{ needs.meta.outputs.publish != 'true' }}
