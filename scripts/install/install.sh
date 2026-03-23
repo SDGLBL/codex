@@ -3,7 +3,12 @@
 set -eu
 
 VERSION="${1:-latest}"
-INSTALL_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
+REPOSITORY="${CODEX_INSTALL_REPOSITORY:-SDGLBL/codex}"
+RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download}"
+LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
+INSTALL_DIR=""
+INSTALL_AK=""
+INSTALL_AZURE_BASE_URL=""
 path_action="already"
 path_profile=""
 
@@ -63,6 +68,83 @@ download_text() {
   exit 1
 }
 
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "$1 is required to install Codex." >&2
+    exit 1
+  fi
+}
+
+require_command dirname
+require_command mktemp
+require_command tar
+
+resolve_version() {
+  normalized_version="$(normalize_version "$VERSION")"
+
+  if [ "$normalized_version" != "latest" ]; then
+    printf '%s\n' "$normalized_version"
+    return
+  fi
+
+  release_json="$(download_text "$LATEST_RELEASE_URL")"
+  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
+
+  if [ -z "$resolved" ]; then
+    echo "Failed to resolve the latest Codex release version." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$resolved"
+}
+
+release_url_for_asset() {
+  asset="$1"
+  resolved_version="$2"
+
+  printf '%s/rust-v%s/%s\n' "${RELEASE_BASE_URL%/}" "$resolved_version" "$asset"
+}
+
+can_write_dir() {
+  dir="$1"
+  probe="$dir"
+
+  while [ ! -e "$probe" ]; do
+    parent="$(dirname "$probe")"
+    if [ "$parent" = "$probe" ]; then
+      break
+    fi
+    probe="$parent"
+  done
+
+  [ -d "$probe" ] && [ -w "$probe" ]
+}
+
+resolve_install_dir() {
+  if [ -n "${CODEX_INSTALL_DIR:-}" ]; then
+    printf '%s\n' "$CODEX_INSTALL_DIR"
+    return
+  fi
+
+  existing_codex="$(command -v codex 2>/dev/null || true)"
+  if [ -n "$existing_codex" ] && [ -f "$existing_codex" ]; then
+    existing_dir="$(dirname "$existing_codex")"
+    if can_write_dir "$existing_dir"; then
+      printf '%s\n' "$existing_dir"
+      return
+    fi
+  fi
+
+  for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+    if can_write_dir "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s\n' "$HOME/.local/bin"
+}
+
 add_to_path() {
   path_action="already"
   path_profile=""
@@ -97,43 +179,55 @@ add_to_path() {
   path_action="added"
 }
 
-release_url_for_asset() {
-  asset="$1"
-  resolved_version="$2"
-
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
-}
-
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is required to install Codex." >&2
-    exit 1
+prompt_for_install_config() {
+  if [ -n "${CODEX_INSTALL_AK:-}" ]; then
+    INSTALL_AK="$CODEX_INSTALL_AK"
   fi
-}
+  if [ -n "${CODEX_INSTALL_AZURE_BASE_URL:-}" ]; then
+    INSTALL_AZURE_BASE_URL="$CODEX_INSTALL_AZURE_BASE_URL"
+  fi
 
-require_command mktemp
-require_command tar
-
-resolve_version() {
-  normalized_version="$(normalize_version "$VERSION")"
-
-  if [ "$normalized_version" != "latest" ]; then
-    printf '%s\n' "$normalized_version"
+  if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/openai/codex/releases/latest")"
-  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
-
-  if [ -z "$resolved" ]; then
-    echo "Failed to resolve the latest Codex release version." >&2
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    echo "Non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+    echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
     exit 1
   fi
 
-  printf '%s\n' "$resolved"
+  if [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    printf 'Enter the internal Azure base URL: ' >/dev/tty
+    IFS= read -r INSTALL_AZURE_BASE_URL </dev/tty || true
+  fi
+
+  if [ -z "$INSTALL_AK" ]; then
+    old_stty=""
+    if command -v stty >/dev/null 2>&1; then
+      old_stty="$(stty -g </dev/tty 2>/dev/null || true)"
+      stty -echo </dev/tty 2>/dev/null || true
+    fi
+
+    printf 'Enter ak for the internal Azure provider: ' >/dev/tty
+    IFS= read -r INSTALL_AK </dev/tty || true
+
+    if [ -n "$old_stty" ]; then
+      stty "$old_stty" </dev/tty 2>/dev/null || true
+    fi
+    printf '\n' >/dev/tty
+  fi
+
+  if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    echo "A non-empty Azure base URL and ak are required to configure the internal profile." >&2
+    exit 1
+  fi
 }
 
-case "$(uname -s)" in
+uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
+uname_m_value="${CODEX_INSTALL_UNAME_M:-$(uname -m)}"
+
+case "$uname_s_value" in
   Darwin)
     os="darwin"
     ;;
@@ -146,7 +240,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-case "$(uname -m)" in
+case "$uname_m_value" in
   x86_64 | amd64)
     arch="x86_64"
     ;;
@@ -154,13 +248,14 @@ case "$(uname -m)" in
     arch="aarch64"
     ;;
   *)
-    echo "Unsupported architecture: $(uname -m)" >&2
+    echo "Unsupported architecture: $uname_m_value" >&2
     exit 1
     ;;
 esac
 
 if [ "$os" = "darwin" ] && [ "$arch" = "x86_64" ]; then
-  if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then
+  proc_translated="${CODEX_INSTALL_PROC_TRANSLATED:-$(sysctl -n sysctl.proc_translated 2>/dev/null || true)}"
+  if [ "$proc_translated" = "1" ]; then
     arch="aarch64"
   fi
 fi
@@ -187,6 +282,7 @@ else
   fi
 fi
 
+INSTALL_DIR="$(resolve_install_dir)"
 if [ -x "$INSTALL_DIR/codex" ]; then
   install_mode="Updating"
 else
@@ -197,8 +293,10 @@ step "$install_mode Codex CLI"
 step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
-asset="codex-npm-$npm_tag-$resolved_version.tgz"
-download_url="$(release_url_for_asset "$asset" "$resolved_version")"
+native_asset="codex-$vendor_target.tar.gz"
+npm_asset="codex-npm-$npm_tag-$resolved_version.tgz"
+native_download_url="$(release_url_for_asset "$native_asset" "$resolved_version")"
+npm_download_url="$(release_url_for_asset "$npm_asset" "$resolved_version")"
 
 step "Resolved version: $resolved_version"
 
@@ -208,19 +306,33 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-archive_path="$tmp_dir/$asset"
+native_archive_path="$tmp_dir/$native_asset"
+npm_archive_path="$tmp_dir/$npm_asset"
+native_extract_dir="$tmp_dir/native"
+npm_extract_dir="$tmp_dir/npm"
+
+mkdir -p "$native_extract_dir" "$npm_extract_dir"
 
 step "Downloading Codex CLI"
-download_file "$download_url" "$archive_path"
+download_file "$native_download_url" "$native_archive_path"
 
-tar -xzf "$archive_path" -C "$tmp_dir"
+step "Downloading bundled rg"
+download_file "$npm_download_url" "$npm_archive_path"
+
+tar -xzf "$native_archive_path" -C "$native_extract_dir"
+tar -xzf "$npm_archive_path" -C "$npm_extract_dir"
 
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp "$tmp_dir/package/vendor/$vendor_target/codex/codex" "$INSTALL_DIR/codex"
-cp "$tmp_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
+cp "$native_extract_dir/codex-$vendor_target" "$INSTALL_DIR/codex"
+cp "$npm_extract_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
 chmod 0755 "$INSTALL_DIR/codex"
 chmod 0755 "$INSTALL_DIR/rg"
+
+prompt_for_install_config
+
+step "Configuring internal profile"
+printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
 
 add_to_path
 
