@@ -93,8 +93,8 @@ async fn responses_stream_includes_subagent_header_on_review() {
         provider.clone(),
         session_source,
         config.model_verbosity,
-        false,
         None,
+        false,
         false,
         None,
     );
@@ -208,8 +208,8 @@ async fn responses_stream_includes_subagent_header_on_other() {
         provider.clone(),
         session_source,
         config.model_verbosity,
-        false,
         None,
+        false,
         false,
         None,
     );
@@ -322,8 +322,8 @@ async fn responses_respects_model_info_overrides_from_config() {
         provider.clone(),
         session_source,
         config.model_verbosity,
-        false,
         None,
+        false,
         false,
         None,
     );
