@@ -20,7 +20,6 @@ struct PlatformFixture<'a> {
     uname_s: &'a str,
     uname_m: &'a str,
     proc_translated: Option<&'a str>,
-    npm_tag: &'a str,
     vendor_target: &'a str,
     platform_label: &'a str,
 }
@@ -69,29 +68,17 @@ fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result
             .arg(&native_binary_name),
     )?;
 
-    let npm_stage = TempDir::new_in(root)?;
-    let rg_path = npm_stage
-        .path()
-        .join("package")
-        .join("vendor")
-        .join(platform.vendor_target)
-        .join("path")
-        .join("rg");
-    if let Some(parent) = rg_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let rg_stage = TempDir::new_in(root)?;
+    let rg_path = rg_stage.path().join("rg");
     fs::write(&rg_path, "#!/bin/sh\necho rg smoke test\n")?;
     make_executable(&rg_path)?;
     run_command(
         Command::new("tar")
             .arg("-C")
-            .arg(npm_stage.path())
+            .arg(rg_stage.path())
             .arg("-czf")
-            .arg(release_dir.join(format!(
-                "codex-npm-{}-{}.tgz",
-                platform.npm_tag, INSTALL_VERSION
-            )))
-            .arg("package"),
+            .arg(release_dir.join(format!("rg-{}.tar.gz", platform.vendor_target)))
+            .arg("rg"),
     )?;
 
     Ok(format!(
@@ -154,6 +141,38 @@ fn run_installer(
     Ok(String::from_utf8(output.stdout)?)
 }
 
+fn run_installer_failure(
+    home: &Path,
+    release_base_url: &str,
+    platform: &PlatformFixture<'_>,
+) -> Result<(String, String)> {
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home)
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_AK", INSTALL_AK)
+        .env("CODEX_INSTALL_AZURE_BASE_URL", INSTALL_AZURE_BASE_URL)
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if output.status.success() {
+        anyhow::bail!(
+            "installer unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok((
+        String::from_utf8(output.stdout)?,
+        String::from_utf8(output.stderr)?,
+    ))
+}
+
 fn read_installed_config(home: &Path) -> Result<TomlValue> {
     let config_path = home.join(".codex").join("config.toml");
     let serialized = fs::read_to_string(&config_path)
@@ -200,7 +219,6 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         uname_s: "Linux",
         uname_m: "x86_64",
         proc_translated: None,
-        npm_tag: "linux-x64",
         vendor_target: "x86_64-unknown-linux-musl",
         platform_label: "Linux (x64)",
     };
@@ -238,28 +256,19 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
 }
 
 #[test]
-fn install_script_selects_linux_arm64_musl_asset() -> Result<()> {
+fn install_script_rejects_linux_arm64_when_release_is_not_published() -> Result<()> {
     let platform = PlatformFixture {
         uname_s: "Linux",
         uname_m: "aarch64",
         proc_translated: None,
-        npm_tag: "linux-arm64",
         vendor_target: "aarch64-unknown-linux-musl",
         platform_label: "Linux (ARM64)",
     };
-    let fixtures = TempDir::new()?;
     let home = TempDir::new()?;
-    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+    let (stdout, stderr) = run_installer_failure(home.path(), "file:///unused", &platform)?;
 
-    let stdout = run_installer(home.path(), &release_base_url, &platform, None)?;
-    assert!(stdout.contains(platform.platform_label));
-    assert!(
-        home.path()
-            .join(".local")
-            .join("bin")
-            .join("codex")
-            .is_file()
-    );
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("Linux (ARM64) is not currently published"));
 
     Ok(())
 }
@@ -270,7 +279,6 @@ fn install_script_prefers_darwin_arm64_asset_under_rosetta() -> Result<()> {
         uname_s: "Darwin",
         uname_m: "x86_64",
         proc_translated: Some("1"),
-        npm_tag: "darwin-arm64",
         vendor_target: "aarch64-apple-darwin",
         platform_label: "macOS (Apple Silicon)",
     };
@@ -297,7 +305,6 @@ fn install_script_reuses_existing_codex_install_dir() -> Result<()> {
         uname_s: "Linux",
         uname_m: "x86_64",
         proc_translated: None,
-        npm_tag: "linux-x64",
         vendor_target: "x86_64-unknown-linux-musl",
         platform_label: "Linux (x64)",
     };
