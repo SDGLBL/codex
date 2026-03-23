@@ -20,7 +20,6 @@ struct PlatformFixture<'a> {
     uname_s: &'a str,
     uname_m: &'a str,
     proc_translated: Option<&'a str>,
-    npm_tag: &'a str,
     vendor_target: &'a str,
     platform_label: &'a str,
 }
@@ -69,29 +68,17 @@ fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result
             .arg(&native_binary_name),
     )?;
 
-    let npm_stage = TempDir::new_in(root)?;
-    let rg_path = npm_stage
-        .path()
-        .join("package")
-        .join("vendor")
-        .join(platform.vendor_target)
-        .join("path")
-        .join("rg");
-    if let Some(parent) = rg_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let rg_stage = TempDir::new_in(root)?;
+    let rg_path = rg_stage.path().join("rg");
     fs::write(&rg_path, "#!/bin/sh\necho rg smoke test\n")?;
     make_executable(&rg_path)?;
     run_command(
         Command::new("tar")
             .arg("-C")
-            .arg(npm_stage.path())
+            .arg(rg_stage.path())
             .arg("-czf")
-            .arg(release_dir.join(format!(
-                "codex-npm-{}-{}.tgz",
-                platform.npm_tag, INSTALL_VERSION
-            )))
-            .arg("package"),
+            .arg(release_dir.join(format!("rg-{}.tar.gz", platform.vendor_target)))
+            .arg("rg"),
     )?;
 
     Ok(format!(
@@ -200,7 +187,6 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         uname_s: "Linux",
         uname_m: "x86_64",
         proc_translated: None,
-        npm_tag: "linux-x64",
         vendor_target: "x86_64-unknown-linux-musl",
         platform_label: "Linux (x64)",
     };
@@ -243,7 +229,6 @@ fn install_script_selects_linux_arm64_musl_asset() -> Result<()> {
         uname_s: "Linux",
         uname_m: "aarch64",
         proc_translated: None,
-        npm_tag: "linux-arm64",
         vendor_target: "aarch64-unknown-linux-musl",
         platform_label: "Linux (ARM64)",
     };
@@ -270,7 +255,6 @@ fn install_script_prefers_darwin_arm64_asset_under_rosetta() -> Result<()> {
         uname_s: "Darwin",
         uname_m: "x86_64",
         proc_translated: Some("1"),
-        npm_tag: "darwin-arm64",
         vendor_target: "aarch64-apple-darwin",
         platform_label: "macOS (Apple Silicon)",
     };
@@ -297,7 +281,6 @@ fn install_script_reuses_existing_codex_install_dir() -> Result<()> {
         uname_s: "Linux",
         uname_m: "x86_64",
         proc_translated: None,
-        npm_tag: "linux-x64",
         vendor_target: "x86_64-unknown-linux-musl",
         platform_label: "Linux (x64)",
     };
