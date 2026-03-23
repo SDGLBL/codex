@@ -23,8 +23,8 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         provider,
         session_source,
         None,
-        false,
         None,
+        false,
         false,
         None,
     )
