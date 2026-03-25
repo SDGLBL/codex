@@ -330,6 +330,7 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         .stream_request(
             request,
             ResponsesOptions {
+                wire_session_id: Some("parent_wire_456".into()),
                 conversation_id: Some("sess_123".into()),
                 session_source: Some(SessionSource::SubAgent(SubAgentSource::Review)),
                 extra_headers,
@@ -345,6 +346,12 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
 
     assert_eq!(
         req.headers.get("session_id").and_then(|v| v.to_str().ok()),
+        Some("parent_wire_456")
+    );
+    assert_eq!(
+        req.headers
+            .get("x-client-request-id")
+            .and_then(|v| v.to_str().ok()),
         Some("sess_123")
     );
     assert_eq!(

@@ -7,6 +7,7 @@ use tempfile::TempDir;
 use toml::Value as TomlValue;
 
 const TEST_AZURE_BASE_URL: &str = "https://internal.example.test/openapi";
+const TEST_MODEL: &str = "gpt-5.4";
 
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?);
@@ -59,6 +60,10 @@ async fn debug_bootstrap_internal_profile_creates_internal_profile() -> Result<(
             .and_then(TomlValue::as_str),
         Some("secret-ak")
     );
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("gpt-5.4-2026-03-05")
+    );
 
     Ok(())
 }
@@ -100,6 +105,39 @@ model = "o4-mini"
         value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
             .and_then(TomlValue::as_str),
         Some("next-ak")
+    );
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("gpt-5.4-2026-03-05")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn debug_bootstrap_internal_profile_accepts_model_override() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "debug",
+        "bootstrap-internal-profile",
+        "--ak-stdin",
+        "--azure-base-url",
+        TEST_AZURE_BASE_URL,
+        "--model",
+        TEST_MODEL,
+    ])
+    .write_stdin("override-ak\n")
+    .assert()
+    .success();
+
+    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
+        codex_home.path().join("config.toml"),
+    )?)?;
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some(TEST_MODEL)
     );
 
     Ok(())
