@@ -9,6 +9,7 @@ mod event_processor;
 mod event_processor_with_human_output;
 pub mod event_processor_with_jsonl_output;
 pub mod exec_events;
+mod subagent_sidecar;
 
 pub use cli::Cli;
 pub use cli::Command;
@@ -30,6 +31,8 @@ use codex_app_server_protocol::ReviewStartResponse;
 use codex_app_server_protocol::ReviewTarget as ApiReviewTarget;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ThreadReadParams;
+use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadStartParams;
@@ -83,6 +86,8 @@ use std::collections::VecDeque;
 use std::io::IsTerminal;
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::time::Instant;
 use supports_color::Stream;
 use tokio::sync::mpsc;
 use tracing::Instrument;
@@ -98,6 +103,7 @@ use uuid::Uuid;
 use crate::cli::Command as ExecCommand;
 use crate::event_processor::CodexStatus;
 use crate::event_processor::EventProcessor;
+use crate::subagent_sidecar::SubagentSidecarRegistry;
 use codex_core::default_client::set_default_client_residency_requirement;
 use codex_core::default_client::set_default_originator;
 use codex_core::find_thread_path_by_id_str;
@@ -147,6 +153,7 @@ struct ExecRunArgs {
     prompt: Option<String>,
     skip_git_repo_check: bool,
     stderr_with_ansi: bool,
+    subagent_output_dir: Option<PathBuf>,
 }
 
 fn exec_root_span() -> tracing::Span {
@@ -184,6 +191,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         output_schema: output_schema_path,
         config_overrides,
         progress_cursor,
+        subagent_output_dir,
     } = cli;
 
     let (_stdout_with_ansi, stderr_with_ansi) = match color {
@@ -461,6 +469,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
+        subagent_output_dir,
     })
     .instrument(exec_span)
     .await
@@ -483,6 +492,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
+        subagent_output_dir,
     } = args;
 
     let mut event_processor: Box<dyn EventProcessor> = match json_mode {
@@ -740,10 +750,47 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     // exit with a non-zero status for automation-friendly signaling.
     let mut error_seen = false;
     let mut interrupt_channel_open = true;
+    let mut draining_subagents = false;
+    let mut subagent_drain_started_at: Option<Instant> = None;
     let primary_thread_id_for_requests = primary_thread_id.to_string();
+    let mut subagent_sidecar = subagent_output_dir
+        .map(|output_dir| {
+            SubagentSidecarRegistry::new(
+                primary_thread_id_for_requests.clone(),
+                output_dir,
+                json_mode,
+            )
+        })
+        .transpose()?;
     loop {
         let server_event = if let Some(event) = buffered_events.pop_front() {
             Some(event)
+        } else if draining_subagents {
+            match tokio::time::timeout(Duration::from_millis(200), client.next_event()).await {
+                Ok(maybe_event) => maybe_event,
+                Err(_) => {
+                    let Some(drain_started_at) = subagent_drain_started_at else {
+                        break;
+                    };
+                    let drain_elapsed = drain_started_at.elapsed();
+                    let saw_subagent_threads = subagent_sidecar
+                        .as_ref()
+                        .is_some_and(SubagentSidecarRegistry::has_seen_threads);
+                    let has_active_subagent_threads = subagent_sidecar
+                        .as_ref()
+                        .is_some_and(SubagentSidecarRegistry::has_active_threads);
+                    if drain_elapsed < Duration::from_millis(500) {
+                        continue;
+                    }
+                    if saw_subagent_threads
+                        && has_active_subagent_threads
+                        && drain_elapsed < Duration::from_secs(5)
+                    {
+                        continue;
+                    }
+                    break;
+                }
+            }
         } else {
             tokio::select! {
                 maybe_interrupt = interrupt_rx.recv(), if interrupt_channel_open => {
@@ -788,6 +835,12 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 .await;
             }
             InProcessServerEvent::ServerNotification(notification) => {
+                if let Some(sidecar) = subagent_sidecar.as_mut()
+                    && let Err(err) = sidecar.observe_server_notification(&notification)
+                {
+                    warn!("subagent sidecar server notification handling failed: {err}");
+                    subagent_sidecar = None;
+                }
                 if let ServerNotification::Error(payload) = &notification
                     && payload.thread_id == primary_thread_id_for_requests
                     && payload.turn_id == task_id
@@ -868,12 +921,22 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                         {
                             warn!("thread/unsubscribe failed during shutdown: {err}");
                         }
+                        if subagent_sidecar.is_some() {
+                            draining_subagents = true;
+                            subagent_drain_started_at = Some(Instant::now());
+                            continue;
+                        }
                         break;
                     }
                     CodexStatus::Shutdown => {
                         // `ShutdownComplete` does not identify which attached
                         // thread emitted it, so subagent shutdowns must not end
                         // the primary exec loop early.
+                        if subagent_sidecar.is_some() && !draining_subagents {
+                            draining_subagents = true;
+                            subagent_drain_started_at = Some(Instant::now());
+                            continue;
+                        }
                     }
                 }
             }
@@ -888,14 +951,49 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     }
 
+    if let Some(sidecar) = subagent_sidecar.as_mut()
+        && let Err(err) =
+            backfill_subagent_sidecar_threads(&client, &mut request_ids, sidecar).await
+    {
+        warn!("failed to backfill subagent sidecar logs: {err}");
+    }
     if let Err(err) = client.shutdown().await {
         warn!("in-process app-server shutdown failed: {err}");
+    }
+    if let Some(sidecar) = subagent_sidecar.as_mut()
+        && let Err(err) = sidecar.finalize()
+    {
+        warn!("failed to finalize subagent sidecar logs: {err}");
     }
     event_processor.print_final_output();
     if error_seen {
         std::process::exit(1);
     }
 
+    Ok(())
+}
+
+async fn backfill_subagent_sidecar_threads(
+    client: &InProcessAppServerClient,
+    request_ids: &mut RequestIdSequencer,
+    sidecar: &mut SubagentSidecarRegistry,
+) -> anyhow::Result<()> {
+    for thread_id in sidecar.thread_ids_needing_backfill() {
+        let response: ThreadReadResponse = send_request_with_response(
+            client,
+            ClientRequest::ThreadRead {
+                request_id: request_ids.next(),
+                params: ThreadReadParams {
+                    thread_id,
+                    include_turns: true,
+                },
+            },
+            "thread/read",
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        sidecar.ingest_thread(response.thread)?;
+    }
     Ok(())
 }
 

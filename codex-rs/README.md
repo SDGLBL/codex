@@ -52,6 +52,7 @@ You can enable notifications by configuring a script that is run whenever the ag
 
 To run Codex non-interactively, run `codex exec PROMPT` (you can also pass the prompt via `stdin`) and Codex will work on your task until it decides that it is done and exits. Output is printed to the terminal directly. You can set the `RUST_LOG` environment variable to see more about what's going on.
 Use `codex exec --ephemeral ...` to run without persisting session rollout files to disk.
+Use `codex exec --subagent-output-dir DIR ...` to write sub-agent thread logs into `DIR` without changing the main stdout/stderr stream. In standard output mode, each child thread is written as a best-effort human transcript named `subagent-<nickname>-<thread-id>` (or `subagent-<thread-id>` when no nickname is available). In `--json` mode, child threads are emitted as JSONL sidecars named `subagent-<nickname>-<thread-id>.jsonl`.
 
 ### Experimenting with the Codex Sandbox
 

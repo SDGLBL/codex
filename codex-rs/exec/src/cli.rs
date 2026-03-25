@@ -108,6 +108,10 @@ pub struct Cli {
     )]
     pub last_message_file: Option<PathBuf>,
 
+    /// Directory where sub-agent thread logs should be written.
+    #[arg(long = "subagent-output-dir", value_name = "DIR", global = true)]
+    pub subagent_output_dir: Option<PathBuf>,
+
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
@@ -308,6 +312,29 @@ mod tests {
         assert_eq!(
             cli.last_message_file,
             Some(PathBuf::from("/tmp/resume-output.md"))
+        );
+        let Some(Command::Resume(args)) = cli.command else {
+            panic!("expected resume command");
+        };
+        assert_eq!(args.session_id.as_deref(), Some("session-123"));
+        assert_eq!(args.prompt.as_deref(), Some(PROMPT));
+    }
+
+    #[test]
+    fn resume_accepts_subagent_output_dir_after_subcommand() {
+        const PROMPT: &str = "echo resume-with-subagent-output-dir";
+        let cli = Cli::parse_from([
+            "codex-exec",
+            "resume",
+            "session-123",
+            "--subagent-output-dir",
+            "/tmp/subagent-logs",
+            PROMPT,
+        ]);
+
+        assert_eq!(
+            cli.subagent_output_dir,
+            Some(PathBuf::from("/tmp/subagent-logs"))
         );
         let Some(Command::Resume(args)) = cli.command else {
             panic!("expected resume command");

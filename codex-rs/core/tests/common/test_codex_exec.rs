@@ -23,8 +23,15 @@ impl TestCodexExecBuilder {
     pub fn cmd_with_server(&self, server: &MockServer) -> assert_cmd::Command {
         let mut cmd = self.cmd();
         let base = format!("{}/v1", server.uri());
+        let provider_override = format!(
+            "model_providers.mock={{ name = \"mock\", base_url = {}, env_key = {}, wire_api = \"responses\", supports_websockets = false }}",
+            toml_string_literal(&base),
+            toml_string_literal(CODEX_API_KEY_ENV_VAR),
+        );
         cmd.arg("-c")
-            .arg(format!("openai_base_url={}", toml_string_literal(&base)));
+            .arg(provider_override)
+            .arg("-c")
+            .arg("model_provider=\"mock\"");
         cmd
     }
 
