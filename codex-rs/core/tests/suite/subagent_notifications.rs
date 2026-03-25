@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::config::AgentRoleConfig;
 use codex_features::Feature;
+use codex_core::read_session_meta_line;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use core_test_support::responses::ResponsesRequest;
@@ -29,6 +30,7 @@ const TURN_0_FORK_PROMPT: &str = "seed fork context";
 const TURN_1_PROMPT: &str = "spawn a child and continue";
 const TURN_2_NO_WAIT_PROMPT: &str = "follow up without wait";
 const CHILD_PROMPT: &str = "child: do work";
+const RESUMED_CHILD_PROMPT: &str = "resumed child: continue";
 const INHERITED_MODEL: &str = "gpt-5.2-codex";
 const INHERITED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::XHigh;
 const REQUESTED_MODEL: &str = "gpt-5.1";
@@ -36,7 +38,6 @@ const REQUESTED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
 const ROLE_MODEL: &str = "gpt-5.1-codex-max";
 const ROLE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::High;
 const SPAWNED_AGENT_DEVELOPER_INSTRUCTIONS: &str = "You are a newly spawned agent in a team of agents collaborating to complete a task. You can spawn sub-agents to handle subtasks, and those sub-agents can spawn their own sub-agents. You are responsible for returning the response to your assigned task in the final channel. When you give your response, the contents of your response in the final channel will be immediately delivered back to your parent agent. The prior conversation history was forked from your parent agent. Treat the next user message as your assigned task, and use the forked history only as background context.";
-const RESUMED_CHILD_PROMPT: &str = "child: resumed follow up";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     let is_zstd = req
@@ -496,6 +497,14 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .await?
         .rollout_path()
         .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
+    let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
+    assert_eq!(
+        child_session_meta
+            .meta
+            .wire_session_id
+            .map(|id| id.to_string()),
+        Some(parent_session_id.clone())
+    );
 
     let resumed_child_turn = mount_sse_once_match(
         &server,

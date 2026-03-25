@@ -25,12 +25,12 @@ fn serializes_text_verbosity_when_set() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: Some(TextControls {
             verbosity: Some(OpenAiVerbosity::Low),
             format: None,
         }),
         client_metadata: None,
-        max_output_tokens: Some(64_000),
     };
 
     let v = serde_json::to_value(&req).expect("json");
@@ -70,9 +70,9 @@ fn serializes_text_schema_with_strict_format() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: Some(text_controls),
         client_metadata: None,
-        max_output_tokens: Some(64_000),
     };
 
     let v = serde_json::to_value(&req).expect("json");
@@ -109,9 +109,9 @@ fn omits_text_when_not_set() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: None,
         client_metadata: None,
-        max_output_tokens: Some(64_000),
     };
 
     let v = serde_json::to_value(&req).expect("json");

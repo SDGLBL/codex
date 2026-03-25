@@ -401,6 +401,7 @@ mod tests {
             &RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: None,
                     timestamp: "2026-02-26T00:00:00.000Z".to_string(),
                     cwd: PathBuf::from("/workspace"),
