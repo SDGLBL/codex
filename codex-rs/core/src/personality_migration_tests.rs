@@ -29,14 +29,14 @@ async fn write_session_with_user_event(codex_home: &Path) -> io::Result<()> {
     let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{thread_id}.jsonl"));
     let mut file = tokio::fs::File::create(&file_path).await?;
 
-        let session_meta = SessionMetaLine {
-            meta: SessionMeta {
-                id: thread_id,
-                wire_session_id: Some(thread_id),
-                forked_from_id: None,
-                timestamp: TEST_TIMESTAMP.to_string(),
-                cwd: std::path::PathBuf::from("."),
-                originator: "test_originator".to_string(),
+    let session_meta = SessionMetaLine {
+        meta: SessionMeta {
+            id: thread_id,
+            wire_session_id: None,
+            forked_from_id: None,
+            timestamp: TEST_TIMESTAMP.to_string(),
+            cwd: std::path::PathBuf::from("."),
+            originator: "test_originator".to_string(),
             cli_version: "test_version".to_string(),
             source: SessionSource::Cli,
             agent_path: None,
