@@ -3,6 +3,7 @@ use clap::Parser;
 use std::io::IsTerminal;
 use std::io::Read;
 
+use codex_core::config::DEFAULT_INTERNAL_PROFILE_MODEL;
 use codex_core::config::bootstrap_internal_profile;
 use codex_core::config::find_codex_home;
 
@@ -13,6 +14,9 @@ pub struct DebugBootstrapInternalProfileCommand {
 
     #[arg(long = "azure-base-url", value_name = "URL")]
     pub azure_base_url: String,
+
+    #[arg(long = "model", value_name = "MODEL")]
+    pub model: Option<String>,
 }
 
 pub fn run_debug_bootstrap_internal_profile_command(
@@ -23,9 +27,13 @@ pub fn run_debug_bootstrap_internal_profile_command(
     } else {
         anyhow::bail!("`codex debug bootstrap-internal-profile` requires `--ak-stdin`");
     };
+    let model = cmd
+        .model
+        .as_deref()
+        .unwrap_or(DEFAULT_INTERNAL_PROFILE_MODEL);
 
     let codex_home = find_codex_home()?;
-    let result = bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url)?;
+    let result = bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url, model)?;
 
     if result.made_internal_default {
         println!("Configured internal profile and set it as the default profile.");

@@ -31,10 +31,11 @@ You can customize the install with:
 ```shell
 CODEX_INSTALL_DIR="$HOME/bin" CODEX_INSTALL_AK="your-ak" \
 CODEX_INSTALL_AZURE_BASE_URL="https://your-internal-endpoint" \
+CODEX_INSTALL_MODEL="gpt-5.4-2026-03-05" \
   curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash
 ```
 
-The installer downloads the native release binary for your platform, installs `rg`, and bootstraps the internal Azure-backed `internal` profile. `ak` and the Azure base URL are supplied at install time instead of being hardcoded in the repo. Linux defaults to the musl release assets.
+The installer downloads the native release binary for your platform, installs `rg`, and bootstraps the internal Azure-backed `internal` profile. `ak`, the Azure base URL, and the optional default model are supplied at install time instead of being hardcoded in the repo. If `CODEX_INSTALL_MODEL` is unset, the installer writes `gpt-5.4-2026-03-05`. Linux defaults to the musl release assets.
 
 You can also install with your preferred package manager:
 
@@ -60,7 +61,6 @@ Each GitHub Release contains many executables, but in practice, you likely want 
   - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
 - Linux
   - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
 
 Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
 

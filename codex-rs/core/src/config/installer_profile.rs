@@ -10,7 +10,7 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 
 const INTERNAL_PROFILE_NAME: &str = "internal";
-const INTERNAL_MODEL: &str = "gpt-5.4-2026-03-05";
+pub const DEFAULT_INTERNAL_PROFILE_MODEL: &str = "gpt-5.4-2026-03-05";
 const AZURE_PROVIDER_ID: &str = "azure";
 const AZURE_API_VERSION: &str = "2025-04-01-preview";
 
@@ -23,6 +23,7 @@ pub fn bootstrap_internal_profile(
     codex_home: &Path,
     ak: &str,
     azure_base_url: &str,
+    model: &str,
 ) -> anyhow::Result<BootstrapInternalProfileResult> {
     let ak = ak.trim();
     if ak.is_empty() {
@@ -31,6 +32,10 @@ pub fn bootstrap_internal_profile(
     let azure_base_url = azure_base_url.trim();
     if azure_base_url.is_empty() {
         anyhow::bail!("internal installer requires a non-empty azure base URL");
+    }
+    let model = model.trim();
+    if model.is_empty() {
+        anyhow::bail!("internal installer requires a non-empty model");
     }
 
     let config_path = codex_home.join(CONFIG_TOML_FILE);
@@ -47,7 +52,7 @@ pub fn bootstrap_internal_profile(
     };
 
     let made_internal_default = !has_non_empty_string(&existing, &["profile"]);
-    let mut edits = installer_owned_edits(ak, azure_base_url);
+    let mut edits = installer_owned_edits(ak, azure_base_url, model);
 
     if made_internal_default {
         edits.push(set_path(&["profile"], value(INTERNAL_PROFILE_NAME)));
@@ -64,12 +69,9 @@ pub fn bootstrap_internal_profile(
     })
 }
 
-fn installer_owned_edits(ak: &str, azure_base_url: &str) -> Vec<ConfigEdit> {
+fn installer_owned_edits(ak: &str, azure_base_url: &str, model: &str) -> Vec<ConfigEdit> {
     let mut edits = vec![
-        set_path(
-            &["profiles", INTERNAL_PROFILE_NAME, "model"],
-            value(INTERNAL_MODEL),
-        ),
+        set_path(&["profiles", INTERNAL_PROFILE_NAME, "model"], value(model)),
         set_path(
             &["profiles", INTERNAL_PROFILE_NAME, "model_provider"],
             value(AZURE_PROVIDER_ID),
@@ -290,8 +292,12 @@ mod tests {
     async fn bootstrap_internal_profile_creates_internal_defaults() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        let result =
-            bootstrap_internal_profile(codex_home.path(), "first-ak", TEST_AZURE_BASE_URL)?;
+        let result = bootstrap_internal_profile(
+            codex_home.path(),
+            "first-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
         assert_eq!(
             result,
             BootstrapInternalProfileResult {
@@ -314,7 +320,10 @@ mod tests {
             config.active_profile.as_deref(),
             Some(INTERNAL_PROFILE_NAME)
         );
-        assert_eq!(config.model.as_deref(), Some(INTERNAL_MODEL));
+        assert_eq!(
+            config.model.as_deref(),
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL)
+        );
         assert_eq!(config.model_provider_id, AZURE_PROVIDER_ID);
         assert_eq!(
             config.model_provider.base_url.as_deref(),
@@ -364,8 +373,12 @@ multi_agent = false
 "#,
         )?;
 
-        let result =
-            bootstrap_internal_profile(codex_home.path(), "second-ak", TEST_AZURE_BASE_URL)?;
+        let result = bootstrap_internal_profile(
+            codex_home.path(),
+            "second-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
         assert_eq!(
             result,
             BootstrapInternalProfileResult {
@@ -402,13 +415,50 @@ multi_agent = false
     fn bootstrap_internal_profile_updates_ak_idempotently() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        bootstrap_internal_profile(codex_home.path(), "old-ak", TEST_AZURE_BASE_URL)?;
-        bootstrap_internal_profile(codex_home.path(), "new-ak", TEST_AZURE_BASE_URL)?;
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "old-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "new-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
         let after_update = read_config(&codex_home)?;
         assert!(after_update.contains("ak = \"new-ak\""));
         assert!(!after_update.contains("ak = \"old-ak\""));
 
-        bootstrap_internal_profile(codex_home.path(), "new-ak", TEST_AZURE_BASE_URL)?;
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "new-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
+        let after_rerun = read_config(&codex_home)?;
+        assert_eq!(after_rerun, after_update);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_internal_profile_updates_model_idempotently() -> anyhow::Result<()> {
+        let codex_home = TempDir::new()?;
+
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "same-ak",
+            TEST_AZURE_BASE_URL,
+            DEFAULT_INTERNAL_PROFILE_MODEL,
+        )?;
+        bootstrap_internal_profile(codex_home.path(), "same-ak", TEST_AZURE_BASE_URL, "gpt-5.4")?;
+        let after_update = read_config(&codex_home)?;
+        assert!(after_update.contains("model = \"gpt-5.4\""));
+        assert!(!after_update.contains("model = \"gpt-5.4-2026-03-05\""));
+
+        bootstrap_internal_profile(codex_home.path(), "same-ak", TEST_AZURE_BASE_URL, "gpt-5.4")?;
         let after_rerun = read_config(&codex_home)?;
         assert_eq!(after_rerun, after_update);
 
