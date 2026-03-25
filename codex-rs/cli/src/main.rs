@@ -2051,6 +2051,8 @@ mod tests {
             "--ak-stdin",
             "--azure-base-url",
             "https://internal.example.test/openapi",
+            "--model",
+            "gpt-5.4",
         ])
         .expect("parse should succeed");
         let Some(Subcommand::Debug(DebugCommand { subcommand })) = cli.subcommand else {
@@ -2061,6 +2063,7 @@ mod tests {
         };
         assert!(cmd.ak_stdin);
         assert_eq!(cmd.azure_base_url, "https://internal.example.test/openapi");
+        assert_eq!(cmd.model.as_deref(), Some("gpt-5.4"));
     }
 
     #[test]
