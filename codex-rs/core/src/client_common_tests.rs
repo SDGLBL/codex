@@ -25,11 +25,11 @@ fn serializes_text_verbosity_when_set() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: Some(TextControls {
             verbosity: Some(OpenAiVerbosity::Low),
             format: None,
         }),
-        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 
@@ -70,8 +70,8 @@ fn serializes_text_schema_with_strict_format() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: Some(text_controls),
-        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 
@@ -109,8 +109,8 @@ fn omits_text_when_not_set() {
         include: vec![],
         prompt_cache_key: None,
         service_tier: None,
+        max_output_tokens: None,
         text: None,
-        max_output_tokens: Some(64_000),
         client_metadata: None,
     };
 

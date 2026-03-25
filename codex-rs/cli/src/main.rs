@@ -2317,6 +2317,29 @@ mod tests {
         assert_eq!(feature, "shell_tool");
     }
 
+    fn debug_bootstrap_internal_profile_parses_stdin_flag() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "debug",
+            "bootstrap-internal-profile",
+            "--ak-stdin",
+            "--azure-base-url",
+            "https://internal.example.test/openapi",
+            "--model",
+            "gpt-5.4",
+        ])
+        .expect("parse should succeed");
+        let Some(Subcommand::Debug(DebugCommand { subcommand })) = cli.subcommand else {
+            panic!("expected debug subcommand");
+        };
+        let DebugSubcommand::BootstrapInternalProfile(cmd) = subcommand else {
+            panic!("expected bootstrap-internal-profile");
+        };
+        assert!(cmd.ak_stdin);
+        assert_eq!(cmd.azure_base_url, "https://internal.example.test/openapi");
+        assert_eq!(cmd.model.as_deref(), Some("gpt-5.4"));
+    }
+
     #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
