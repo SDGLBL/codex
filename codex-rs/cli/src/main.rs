@@ -923,6 +923,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             DebugSubcommand::BootstrapInternalProfile(cmd) => {
                 reject_remote_mode_for_subcommand(
                     root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
                     "debug bootstrap-internal-profile",
                 )?;
                 run_debug_bootstrap_internal_profile_command(cmd)?;
