@@ -109,7 +109,13 @@ fn run_installer(
     platform: &PlatformFixture<'_>,
     extra_path_prefix: Option<&Path>,
 ) -> Result<String> {
-    run_installer_with_model(home, release_base_url, platform, extra_path_prefix, None)
+    run_installer_with_model(
+        home,
+        release_base_url,
+        platform,
+        extra_path_prefix,
+        /*install_model*/ None,
+    )
 }
 
 fn run_installer_with_model(
@@ -298,7 +304,12 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     let home = TempDir::new()?;
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
 
-    let stdout = run_installer(home.path(), &release_base_url, &platform, None)?;
+    let stdout = run_installer(
+        home.path(),
+        &release_base_url,
+        &platform,
+        /*extra_path_prefix*/ None,
+    )?;
     assert!(stdout.contains(platform.platform_label));
     assert!(stdout.contains("Configured internal profile and set it as the default profile."));
 
@@ -350,7 +361,7 @@ fn install_script_resolves_latest_version_from_install_url_when_api_lookup_fails
         &latest_install_url,
         "file:///definitely-missing/latest.json",
         &platform,
-        None,
+        /*extra_path_prefix*/ None,
     )?;
 
     assert!(stdout.contains("Resolved version: 9.9.9"));
@@ -446,7 +457,12 @@ fn install_script_prefers_darwin_arm64_asset_under_rosetta() -> Result<()> {
     let home = TempDir::new()?;
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
 
-    let stdout = run_installer(home.path(), &release_base_url, &platform, None)?;
+    let stdout = run_installer(
+        home.path(),
+        &release_base_url,
+        &platform,
+        /*extra_path_prefix*/ None,
+    )?;
     assert!(stdout.contains(platform.platform_label));
     assert!(
         home.path()
@@ -520,9 +536,9 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
         home.path(),
         &release_base_url,
         &platform,
-        None,
+        /*extra_path_prefix*/ None,
         "/bin/zsh",
-        None,
+        /*install_model*/ None,
     )?;
 
     let zprofile_path = home.path().join(".zprofile");
@@ -553,7 +569,7 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
         home.path(),
         &release_base_url,
         &platform,
-        None,
+        /*extra_path_prefix*/ None,
         Some("gpt-5.4"),
     )?;
 
