@@ -302,7 +302,8 @@ async fn spawned_child_without_fork_uses_child_thread_id_for_session_header() ->
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let (test, spawned_id) = setup_turn_one_with_spawned_child(&server, None).await?;
+    let (test, spawned_id) =
+        setup_turn_one_with_spawned_child(&server, /*child_response_delay*/ None).await?;
     let requests = server.received_requests().await.unwrap_or_default();
     let child_request = requests
         .into_iter()

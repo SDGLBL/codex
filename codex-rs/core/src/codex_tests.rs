@@ -257,7 +257,6 @@ fn test_model_client_session() -> crate::client::ModelClientSession {
         ),
         codex_protocol::protocol::SessionSource::Exec,
         /*model_verbosity*/ None,
-        /*responses_websockets_enabled_by_feature*/ false,
         /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
