@@ -507,23 +507,41 @@ async fn conversation_webrtc_start_posts_generated_session() -> Result<()> {
         Some("multipart/form-data; boundary=codex-realtime-call-boundary")
     );
     let body = String::from_utf8(request.body).context("multipart body should be utf-8")?;
-    let session = r#"{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000}},"output":{"voice":"cove"}},"type":"quicksilver","model":"realtime-test-model","instructions":"backend prompt\n\nstartup context"}"#;
+    let session_prefix = "--codex-realtime-call-boundary\r\n\
+         Content-Disposition: form-data; name=\"sdp\"\r\n\
+         Content-Type: application/sdp\r\n\
+         \r\n\
+         v=offer\r\n\
+         \r\n\
+         --codex-realtime-call-boundary\r\n\
+         Content-Disposition: form-data; name=\"session\"\r\n\
+         Content-Type: application/json\r\n\
+         \r\n";
+    let session_suffix = "\r\n--codex-realtime-call-boundary--\r\n";
+    let session = body
+        .strip_prefix(session_prefix)
+        .and_then(|rest| rest.strip_suffix(session_suffix))
+        .context("multipart body should contain session payload between boundary markers")?;
+    let session: Value = serde_json::from_str(session)
+        .context("session payload inside multipart body should be valid json")?;
     assert_eq!(
-        body,
-        format!(
-            "--codex-realtime-call-boundary\r\n\
-             Content-Disposition: form-data; name=\"sdp\"\r\n\
-             Content-Type: application/sdp\r\n\
-             \r\n\
-             v=offer\r\n\
-             \r\n\
-             --codex-realtime-call-boundary\r\n\
-             Content-Disposition: form-data; name=\"session\"\r\n\
-             Content-Type: application/json\r\n\
-             \r\n\
-             {session}\r\n\
-             --codex-realtime-call-boundary--\r\n"
-        )
+        session,
+        json!({
+            "audio": {
+                "input": {
+                    "format": {
+                        "type": "audio/pcm",
+                        "rate": 24000,
+                    },
+                },
+                "output": {
+                    "voice": "cove",
+                },
+            },
+            "type": "quicksilver",
+            "model": "realtime-test-model",
+            "instructions": "backend prompt\n\nstartup context",
+        })
     );
 
     // Phase 3: the server joins that same call over the direct sideband WebSocket, sends the

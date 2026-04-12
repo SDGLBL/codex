@@ -536,7 +536,11 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
 
     resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
 
-    let resumed_request = resumed_child_turn.single_request();
+    let resumed_request = wait_for_requests(&resumed_child_turn)
+        .await?
+        .into_iter()
+        .find(|request| request.body_contains_text(RESUMED_CHILD_PROMPT))
+        .ok_or_else(|| anyhow::anyhow!("expected resumed child request"))?;
     assert_eq!(
         resumed_request.header("session_id").as_deref(),
         Some(parent_session_id.as_str())
