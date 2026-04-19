@@ -23,21 +23,8 @@ pub fn bootstrap_internal_profile(
     codex_home: &Path,
     ak: &str,
     azure_base_url: &str,
-    model: &str,
+    model: Option<&str>,
 ) -> anyhow::Result<BootstrapInternalProfileResult> {
-    let ak = ak.trim();
-    if ak.is_empty() {
-        anyhow::bail!("internal installer requires a non-empty ak");
-    }
-    let azure_base_url = azure_base_url.trim();
-    if azure_base_url.is_empty() {
-        anyhow::bail!("internal installer requires a non-empty azure base URL");
-    }
-    let model = model.trim();
-    if model.is_empty() {
-        anyhow::bail!("internal installer requires a non-empty model");
-    }
-
     let config_path = codex_home.join(CONFIG_TOML_FILE);
     let serialized = match std::fs::read_to_string(&config_path) {
         Ok(contents) => contents,
@@ -50,6 +37,13 @@ pub fn bootstrap_internal_profile(
         toml::from_str::<TomlValue>(&serialized)
             .with_context(|| format!("failed to parse config at {}", config_path.display()))?
     };
+
+    let internal_profile_exists = has_path(&existing, &["profiles", INTERNAL_PROFILE_NAME]);
+
+    let ak = resolve_ak(ak, &existing, internal_profile_exists)?;
+    let azure_base_url =
+        resolve_azure_base_url(azure_base_url, &existing, internal_profile_exists)?;
+    let model = resolve_model(model, &existing, internal_profile_exists);
 
     let made_internal_default = !has_non_empty_string(&existing, &["profile"]);
     let mut edits = installer_owned_edits(ak, azure_base_url, model);
@@ -99,32 +93,6 @@ fn installer_owned_edits(ak: &str, azure_base_url: &str, model: &str) -> Vec<Con
         set_path(
             &["profiles", INTERNAL_PROFILE_NAME, "model_max_output_tokens"],
             value(64_000),
-        ),
-        set_path(
-            &["profiles", INTERNAL_PROFILE_NAME, "features", "js_repl"],
-            value(false),
-        ),
-        set_path(
-            &["profiles", INTERNAL_PROFILE_NAME, "features", "apps"],
-            value(false),
-        ),
-        set_path(
-            &[
-                "profiles",
-                INTERNAL_PROFILE_NAME,
-                "features",
-                "guardian_approval",
-            ],
-            value(false),
-        ),
-        set_path(
-            &[
-                "profiles",
-                INTERNAL_PROFILE_NAME,
-                "features",
-                "prevent_idle_sleep",
-            ],
-            value(true),
         ),
         set_path(
             &["model_providers", AZURE_PROVIDER_ID, "name"],
@@ -232,6 +200,81 @@ fn has_non_empty_string(value: &TomlValue, segments: &[&str]) -> bool {
     )
 }
 
+fn resolve_ak<'a>(
+    input_ak: &'a str,
+    existing: &'a TomlValue,
+    internal_profile_exists: bool,
+) -> anyhow::Result<&'a str> {
+    let input_ak = input_ak.trim();
+    if !input_ak.is_empty() {
+        return Ok(input_ak);
+    }
+
+    if internal_profile_exists
+        && let Some(existing_ak) = value_at_path(
+            existing,
+            &["model_providers", AZURE_PROVIDER_ID, "query_params", "ak"],
+        )
+        .and_then(TomlValue::as_str)
+        .map(str::trim)
+        .filter(|existing_ak| !existing_ak.is_empty())
+    {
+        return Ok(existing_ak);
+    }
+
+    anyhow::bail!("internal installer requires a non-empty ak");
+}
+
+fn resolve_azure_base_url<'a>(
+    input_azure_base_url: &'a str,
+    existing: &'a TomlValue,
+    internal_profile_exists: bool,
+) -> anyhow::Result<&'a str> {
+    let input_azure_base_url = input_azure_base_url.trim();
+    if !input_azure_base_url.is_empty() {
+        return Ok(input_azure_base_url);
+    }
+
+    if internal_profile_exists
+        && let Some(existing_azure_base_url) = value_at_path(
+            existing,
+            &["model_providers", AZURE_PROVIDER_ID, "base_url"],
+        )
+        .and_then(TomlValue::as_str)
+        .map(str::trim)
+        .filter(|existing_azure_base_url| !existing_azure_base_url.is_empty())
+    {
+        return Ok(existing_azure_base_url);
+    }
+
+    anyhow::bail!("internal installer requires a non-empty azure base URL");
+}
+
+fn resolve_model<'a>(
+    input_model: Option<&'a str>,
+    existing: &'a TomlValue,
+    internal_profile_exists: bool,
+) -> &'a str {
+    if let Some(input_model) = input_model
+        .map(str::trim)
+        .filter(|input_model| !input_model.is_empty())
+    {
+        return input_model;
+    }
+
+    if internal_profile_exists
+        && let Some(existing_model) =
+            value_at_path(existing, &["profiles", INTERNAL_PROFILE_NAME, "model"])
+                .and_then(TomlValue::as_str)
+                .map(str::trim)
+                .filter(|existing_model| !existing_model.is_empty())
+    {
+        return existing_model;
+    }
+
+    DEFAULT_INTERNAL_PROFILE_MODEL
+}
+
 fn has_path(value: &TomlValue, segments: &[&str]) -> bool {
     value_at_path(value, segments).is_some()
 }
@@ -296,7 +339,7 @@ mod tests {
             codex_home.path(),
             "first-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
         assert_eq!(
             result,
@@ -311,6 +354,7 @@ mod tests {
         assert!(serialized.contains("model = \"gpt-5.4-2026-03-05\""));
         assert!(serialized.contains("[model_providers.azure]"));
         assert!(serialized.contains("ak = \"first-ak\""));
+        assert!(!serialized.contains("[profiles.internal.features]"));
 
         let config = ConfigBuilder::default()
             .codex_home(codex_home.path().to_path_buf())
@@ -377,7 +421,7 @@ multi_agent = false
             codex_home.path(),
             "second-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
         assert_eq!(
             result,
@@ -419,13 +463,13 @@ multi_agent = false
             codex_home.path(),
             "old-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
         bootstrap_internal_profile(
             codex_home.path(),
             "new-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
         let after_update = read_config(&codex_home)?;
         assert!(after_update.contains("ak = \"new-ak\""));
@@ -435,7 +479,7 @@ multi_agent = false
             codex_home.path(),
             "new-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
         let after_rerun = read_config(&codex_home)?;
         assert_eq!(after_rerun, after_update);
@@ -451,16 +495,83 @@ multi_agent = false
             codex_home.path(),
             "same-ak",
             TEST_AZURE_BASE_URL,
-            DEFAULT_INTERNAL_PROFILE_MODEL,
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
-        bootstrap_internal_profile(codex_home.path(), "same-ak", TEST_AZURE_BASE_URL, "gpt-5.4")?;
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "same-ak",
+            TEST_AZURE_BASE_URL,
+            Some("gpt-5.4"),
+        )?;
         let after_update = read_config(&codex_home)?;
         assert!(after_update.contains("model = \"gpt-5.4\""));
         assert!(!after_update.contains("model = \"gpt-5.4-2026-03-05\""));
 
-        bootstrap_internal_profile(codex_home.path(), "same-ak", TEST_AZURE_BASE_URL, "gpt-5.4")?;
+        bootstrap_internal_profile(
+            codex_home.path(),
+            "same-ak",
+            TEST_AZURE_BASE_URL,
+            Some("gpt-5.4"),
+        )?;
         let after_rerun = read_config(&codex_home)?;
         assert_eq!(after_rerun, after_update);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_internal_profile_allows_empty_input_values_when_internal_exists()
+    -> anyhow::Result<()> {
+        let codex_home = TempDir::new()?;
+        std::fs::write(
+            codex_home.path().join(CONFIG_TOML_FILE),
+            r#"
+profile = "internal"
+
+[profiles.internal]
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+        )?;
+
+        bootstrap_internal_profile(codex_home.path(), "", "", None)?;
+
+        let config = toml::from_str::<TomlValue>(&read_config(&codex_home)?)?;
+        assert_eq!(
+            value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+            Some("existing-model")
+        );
+        assert_eq!(
+            value_at_path(&config, &["model_providers", "azure", "base_url"])
+                .and_then(TomlValue::as_str),
+            Some("https://existing.example.test/openapi")
+        );
+        assert_eq!(
+            value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+                .and_then(TomlValue::as_str),
+            Some("existing-ak")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_internal_profile_uses_default_model_when_input_model_is_absent()
+    -> anyhow::Result<()> {
+        let codex_home = TempDir::new()?;
+
+        bootstrap_internal_profile(codex_home.path(), "ak", TEST_AZURE_BASE_URL, None)?;
+
+        let config = toml::from_str::<TomlValue>(&read_config(&codex_home)?)?;
+        assert_eq!(
+            value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+            Some(DEFAULT_INTERNAL_PROFILE_MODEL)
+        );
 
         Ok(())
     }

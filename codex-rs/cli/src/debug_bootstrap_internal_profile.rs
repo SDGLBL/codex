@@ -3,7 +3,6 @@ use clap::Parser;
 use std::io::IsTerminal;
 use std::io::Read;
 
-use codex_core::config::DEFAULT_INTERNAL_PROFILE_MODEL;
 use codex_core::config::bootstrap_internal_profile;
 use codex_core::config::find_codex_home;
 
@@ -27,13 +26,10 @@ pub fn run_debug_bootstrap_internal_profile_command(
     } else {
         anyhow::bail!("`codex debug bootstrap-internal-profile` requires `--ak-stdin`");
     };
-    let model = cmd
-        .model
-        .as_deref()
-        .unwrap_or(DEFAULT_INTERNAL_PROFILE_MODEL);
 
     let codex_home = find_codex_home()?;
-    let result = bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url, model)?;
+    let result =
+        bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url, cmd.model.as_deref())?;
 
     if result.made_internal_default {
         println!("Configured internal profile and set it as the default profile.");
@@ -59,10 +55,5 @@ fn read_ak_from_stdin() -> anyhow::Result<String> {
         .read_to_string(&mut buffer)
         .context("failed to read ak from stdin")?;
 
-    let ak = buffer.trim().to_string();
-    if ak.is_empty() {
-        anyhow::bail!("no ak provided via stdin");
-    }
-
-    Ok(ak)
+    Ok(buffer.trim().to_string())
 }

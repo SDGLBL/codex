@@ -266,7 +266,21 @@ add_to_path() {
   path_action="manual"
 }
 
+warn_if_crawl_url() {
+  case "$1" in
+    */v2/crawl|*/v2/crawl/)
+      echo "Warning: CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl. GPT models use the responses API, so this should point at the openapi base URL, not /v2/crawl." >&2
+      ;;
+  esac
+}
+
 prompt_for_install_config() {
+  has_internal_profile="false"
+  config_path="$HOME/.codex/config.toml"
+  if [ -f "$config_path" ] && grep -Eq '^[[:space:]]*\[profiles\.internal\][[:space:]]*$' "$config_path"; then
+    has_internal_profile="true"
+  fi
+
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
     INSTALL_AK="$CODEX_INSTALL_AK"
   fi
@@ -275,11 +289,19 @@ prompt_for_install_config() {
   fi
 
   if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+    warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+    return
+  fi
+
+  if [ "$has_internal_profile" = "true" ]; then
+    if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+      warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+    fi
     return
   fi
 
   if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
-    echo "Non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+    echo "When bootstrapping a new internal profile, non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
     echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
     exit 1
   fi
@@ -309,6 +331,8 @@ prompt_for_install_config() {
     echo "A non-empty Azure base URL and ak are required to configure the internal profile." >&2
     exit 1
   fi
+
+  warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
 }
 
 uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"

@@ -333,6 +333,15 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
             .and_then(TomlValue::as_str),
         Some(INSTALL_AK)
     );
+    assert_eq!(
+        value_at_path(&config, &["tui", "notification_condition"]),
+        None
+    );
+    assert_eq!(value_at_path(&config, &["tui", "status_line"]), None);
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "features"]),
+        None
+    );
 
     assert_installed_binary_loads_internal_profile(home.path(), &install_dir)?;
     Ok(())
@@ -577,6 +586,146 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
     assert_eq!(
         value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn install_script_allows_empty_inputs_when_internal_profile_already_exists() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let codex_home = home.path().join(".codex");
+    fs::create_dir_all(&codex_home)?;
+    fs::write(
+        codex_home.join("config.toml"),
+        r#"
+profile = "internal"
+
+[profiles.internal]
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+    )?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let config = read_installed_config(home.path())?;
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("existing-model")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
+        Some("existing-ak")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn install_script_warns_for_crawl_base_url_but_continues() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let codex_home = home.path().join(".codex");
+    fs::create_dir_all(&codex_home)?;
+    fs::write(
+        codex_home.join("config.toml"),
+        r#"
+profile = "internal"
+
+[profiles.internal]
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+    )?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+    let crawl_url = "https://example.test/gpt/openapi/v2/crawl";
+
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_AK", "new-ak")
+        .env("CODEX_INSTALL_AZURE_BASE_URL", crawl_url)
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(stderr.contains("CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl"));
+
+    let config = read_installed_config(home.path())?;
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some(crawl_url)
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
+        Some("new-ak")
     );
 
     Ok(())

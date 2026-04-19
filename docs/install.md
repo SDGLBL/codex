@@ -27,9 +27,10 @@ Notes:
 
 - The Unix installer downloads the native release binary for your platform and installs the bundled `rg`.
 - Linux always selects the musl release assets (`*-unknown-linux-musl`).
-- `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL` are optional for interactive installs. If either is unset, the installer prompts for it and then bootstraps the internal Azure-backed `internal` profile in `~/.codex/config.toml`.
-- `CODEX_INSTALL_MODEL` is optional. If unset, the installer writes `gpt-5.4-2026-03-05` into `profiles.internal.model`.
-- Non-interactive installs must set both `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL`.
+- `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL` are optional for interactive installs. If either is unset while bootstrapping a new `internal` profile, the installer prompts for it.
+- If `profiles.internal` already exists in `~/.codex/config.toml`, `CODEX_INSTALL_AK`, `CODEX_INSTALL_AZURE_BASE_URL`, and `CODEX_INSTALL_MODEL` can be omitted; missing values fall back to the existing profile/provider config.
+- `CODEX_INSTALL_MODEL` is optional. If unset, the installer keeps the existing `profiles.internal.model` when present, otherwise it writes `gpt-5.4-2026-03-05`.
+- When bootstrapping a new internal profile in non-interactive mode, both `CODEX_INSTALL_AK` and `CODEX_INSTALL_AZURE_BASE_URL` are required.
 - On Windows, use `install.ps1` from the same release page instead of `install.sh`.
 
 ### System requirements

@@ -64,6 +64,10 @@ async fn debug_bootstrap_internal_profile_creates_internal_profile() -> Result<(
         value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
     );
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "features"]),
+        None
+    );
 
     Ok(())
 }
@@ -138,6 +142,58 @@ async fn debug_bootstrap_internal_profile_accepts_model_override() -> Result<()>
     assert_eq!(
         value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
         Some(TEST_MODEL)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn debug_bootstrap_internal_profile_allows_empty_values_when_internal_exists() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        r#"
+profile = "internal"
+
+[profiles.internal]
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "debug",
+        "bootstrap-internal-profile",
+        "--ak-stdin",
+        "--azure-base-url",
+        "",
+    ])
+    .write_stdin("\n")
+    .assert()
+    .success();
+
+    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
+        codex_home.path().join("config.toml"),
+    )?)?;
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("existing-model")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
+        Some("existing-ak")
     );
 
     Ok(())
