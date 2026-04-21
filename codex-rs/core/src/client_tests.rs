@@ -153,13 +153,16 @@ async fn model_client_with_agent_task(
         task_id: "task-123".to_string(),
         registered_at: "2026-03-23T12:00:00Z".to_string(),
     };
+    let conversation_id = ThreadId::new();
     let client = ModelClient::new(
         Some(auth_manager),
-        ThreadId::new(),
+        conversation_id,
+        conversation_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
         SessionSource::Cli,
         /*model_verbosity*/ None,
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
