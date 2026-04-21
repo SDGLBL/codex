@@ -31,3 +31,9 @@ The workflows in this directory are split so that pull requests get fast, review
 - If a build/test/clippy check can be expressed in Bazel, prefer putting the PR-time version in `bazel.yml`.
 - Keep `rust-ci.yml` fast enough that it usually does not dominate PR latency.
 - Reserve `rust-ci-full.yml` for heavyweight Cargo-native coverage that Bazel does not replace yet.
+
+## Internal Rust Releases
+
+- Upstream Rust release following is manual and Codex-driven.
+- Use [`release-playbook/README.md`](../../release-playbook/README.md) for queue replay, promotion, and tag publishing.
+- `internal-rust-release.yml` remains as the build/publish workflow for `internal-rust-v*` tags or manual dispatch.
