@@ -335,6 +335,24 @@ prompt_for_install_config() {
   warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
 }
 
+run_internal_profile_bootstrap() {
+  if [ -n "$INSTALL_MODEL" ]; then
+    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
+  else
+    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+  fi
+}
+
+print_manual_bootstrap_hint() {
+  if [ -n "$INSTALL_MODEL" ]; then
+    echo "To complete configuration manually, rerun:" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --model \"$INSTALL_MODEL\"" >&2
+  else
+    echo "To complete configuration manually, rerun:" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\"" >&2
+  fi
+}
+
 uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
 uname_m_value="${CODEX_INSTALL_UNAME_M:-$(uname -m)}"
 
@@ -439,10 +457,19 @@ chmod 0755 "$INSTALL_DIR/rg"
 prompt_for_install_config
 
 step "Configuring internal profile"
-if [ -n "$INSTALL_MODEL" ]; then
-  printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
+if run_internal_profile_bootstrap; then
+  :
 else
-  printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+  bootstrap_exit="$?"
+  echo "Warning: failed to configure internal profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
+  if run_internal_profile_bootstrap; then
+    echo "Warning: internal profile bootstrap succeeded on retry." >&2
+  else
+    bootstrap_retry_exit="$?"
+    echo "Warning: failed to configure internal profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
+    echo "Warning: Codex CLI is installed, but internal profile setup did not complete." >&2
+    print_manual_bootstrap_hint
+  fi
 fi
 
 add_to_path
