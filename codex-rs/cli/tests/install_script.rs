@@ -48,7 +48,11 @@ fn base_test_path() -> String {
     "/usr/bin:/bin:/usr/sbin:/sbin".to_string()
 }
 
-fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result<String> {
+fn create_release_fixture_with_codex(
+    root: &Path,
+    platform: &PlatformFixture<'_>,
+    codex_source: &Path,
+) -> Result<String> {
     let release_dir = root.join("releases").join("download").join(INSTALL_TAG);
     fs::create_dir_all(&release_dir)?;
     fs::write(
@@ -59,7 +63,7 @@ fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result
     let native_stage = TempDir::new_in(root)?;
     let native_asset_name = format!("codex-{}.tar.gz", platform.vendor_target);
     let native_binary_path = native_stage.path().join("codex");
-    fs::copy(codex_binary_path()?, &native_binary_path)?;
+    fs::copy(codex_source, &native_binary_path)?;
     make_executable(&native_binary_path)?;
     run_command(
         Command::new("tar")
@@ -87,6 +91,11 @@ fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result
         "file://{}",
         root.join("releases").join("download").display()
     ))
+}
+
+fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result<String> {
+    let codex_path = codex_binary_path()?;
+    create_release_fixture_with_codex(root, platform, &codex_path)
 }
 
 fn run_command(command: &mut Command) -> Result<()> {
@@ -727,6 +736,71 @@ ak = "existing-ak"
             .and_then(TomlValue::as_str),
         Some("new-ak")
     );
+
+    Ok(())
+}
+
+#[test]
+fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+
+    let fake_codex_dir = TempDir::new_in(fixtures.path())?;
+    let fake_codex_path = fake_codex_dir.path().join("codex");
+    fs::write(
+        &fake_codex_path,
+        "#!/bin/sh\nset -eu\nif [ \"${1:-}\" = \"debug\" ] && [ \"${2:-}\" = \"bootstrap-internal-profile\" ]; then\n  kill -9 $$\nfi\nexit 0\n",
+    )?;
+    make_executable(&fake_codex_path)?;
+
+    let release_base_url =
+        create_release_fixture_with_codex(fixtures.path(), &platform, &fake_codex_path)?;
+
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_AK", INSTALL_AK)
+        .env("CODEX_INSTALL_AZURE_BASE_URL", INSTALL_AZURE_BASE_URL)
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(stdout.contains("Configuring internal profile"));
+    assert!(stderr.contains(
+        "Warning: failed to configure internal profile automatically (exit 137). Retrying once..."
+    ));
+    assert!(
+        stderr.contains(
+            "Warning: Codex CLI is installed, but internal profile setup did not complete."
+        )
+    );
+    assert!(stderr.contains("To complete configuration manually, rerun:"));
+
+    let install_dir = home.path().join(".local").join("bin");
+    assert!(install_dir.join("codex").is_file());
+    assert!(install_dir.join("rg").is_file());
 
     Ok(())
 }
