@@ -742,6 +742,98 @@ ak = "existing-ak"
 }
 
 #[test]
+fn install_script_skips_bootstrap_when_internal_profile_exists_without_install_overrides()
+-> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let codex_home = home.path().join(".codex");
+    fs::create_dir_all(&codex_home)?;
+    fs::write(
+        codex_home.join("config.toml"),
+        r#"
+profile = "internal"
+
+[profiles.internal]
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+    )?;
+
+    let fake_codex_dir = TempDir::new_in(fixtures.path())?;
+    let fake_codex_path = fake_codex_dir.path().join("codex");
+    fs::write(
+        &fake_codex_path,
+        "#!/bin/sh\nset -eu\nif [ \"${1:-}\" = \"debug\" ] && [ \"${2:-}\" = \"bootstrap-internal-profile\" ]; then\n  kill -9 $$\nfi\nexit 0\n",
+    )?;
+    make_executable(&fake_codex_path)?;
+
+    let release_base_url = create_release_fixture_with_codex(
+        fixtures.path(),
+        &platform,
+        &fake_codex_path,
+        INSTALL_TAG,
+    )?;
+
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(stdout.contains(
+        "Skipping internal profile bootstrap (existing profile detected with no install overrides)"
+    ));
+    assert!(!stderr.contains("failed to configure internal profile automatically"));
+    assert!(!stderr.contains("To complete configuration manually, rerun:"));
+
+    let config = read_installed_config(home.path())?;
+    assert_eq!(
+        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        Some("existing-model")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
+        Some("existing-ak")
+    );
+
+    Ok(())
+}
+
+#[test]
 fn install_script_warns_for_crawl_base_url_but_continues() -> Result<()> {
     let platform = PlatformFixture {
         uname_s: "Linux",

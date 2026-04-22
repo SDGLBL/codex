@@ -13,6 +13,7 @@ INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
 INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
+SHOULD_BOOTSTRAP_INTERNAL_PROFILE="true"
 path_action="already"
 path_profile=""
 
@@ -305,6 +306,16 @@ prompt_for_install_config() {
     INSTALL_AZURE_BASE_URL="$CODEX_INSTALL_AZURE_BASE_URL"
   fi
 
+  has_bootstrap_overrides="false"
+  if [ -n "$INSTALL_AK" ] || [ -n "$INSTALL_AZURE_BASE_URL" ] || [ -n "$INSTALL_MODEL" ]; then
+    has_bootstrap_overrides="true"
+  fi
+
+  if [ "$has_internal_profile" = "true" ] && [ "$has_bootstrap_overrides" = "false" ]; then
+    SHOULD_BOOTSTRAP_INTERNAL_PROFILE="false"
+    return
+  fi
+
   if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
     warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     return
@@ -474,20 +485,24 @@ chmod 0755 "$INSTALL_DIR/rg"
 
 prompt_for_install_config
 
-step "Configuring internal profile"
-if run_internal_profile_bootstrap; then
-  :
-else
-  bootstrap_exit="$?"
-  echo "Warning: failed to configure internal profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
+if [ "$SHOULD_BOOTSTRAP_INTERNAL_PROFILE" = "true" ]; then
+  step "Configuring internal profile"
   if run_internal_profile_bootstrap; then
-    echo "Warning: internal profile bootstrap succeeded on retry." >&2
+    :
   else
-    bootstrap_retry_exit="$?"
-    echo "Warning: failed to configure internal profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
-    echo "Warning: Codex CLI is installed, but internal profile setup did not complete." >&2
-    print_manual_bootstrap_hint
+    bootstrap_exit="$?"
+    echo "Warning: failed to configure internal profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
+    if run_internal_profile_bootstrap; then
+      echo "Warning: internal profile bootstrap succeeded on retry." >&2
+    else
+      bootstrap_retry_exit="$?"
+      echo "Warning: failed to configure internal profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
+      echo "Warning: Codex CLI is installed, but internal profile setup did not complete." >&2
+      print_manual_bootstrap_hint
+    fi
   fi
+else
+  step "Skipping internal profile bootstrap (existing profile detected with no install overrides)"
 fi
 
 add_to_path
