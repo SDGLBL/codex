@@ -52,8 +52,9 @@ fn create_release_fixture_with_codex(
     root: &Path,
     platform: &PlatformFixture<'_>,
     codex_source: &Path,
+    release_tag: &str,
 ) -> Result<String> {
-    let release_dir = root.join("releases").join("download").join(INSTALL_TAG);
+    let release_dir = root.join("releases").join("download").join(release_tag);
     fs::create_dir_all(&release_dir)?;
     fs::write(
         release_dir.join("install.sh"),
@@ -95,7 +96,7 @@ fn create_release_fixture_with_codex(
 
 fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result<String> {
     let codex_path = codex_binary_path()?;
-    create_release_fixture_with_codex(root, platform, &codex_path)
+    create_release_fixture_with_codex(root, platform, &codex_path, INSTALL_TAG)
 }
 
 fn run_command(command: &mut Command) -> Result<()> {
@@ -177,6 +178,38 @@ fn run_installer_with_shell(
     }
 
     let output = command.output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+fn run_installer_with_release_tag(
+    home: &Path,
+    release_base_url: &str,
+    platform: &PlatformFixture<'_>,
+    release_tag: &str,
+) -> Result<String> {
+    let output = Command::new("sh")
+        .arg(installer_script_path()?)
+        .arg("latest")
+        .env("HOME", home)
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_AK", INSTALL_AK)
+        .env("CODEX_INSTALL_AZURE_BASE_URL", INSTALL_AZURE_BASE_URL)
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", release_base_url)
+        .env("CODEX_INSTALL_RELEASE_TAG", release_tag)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
     if !output.status.success() {
         anyhow::bail!(
             "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
@@ -433,6 +466,45 @@ fn install_script_resolves_latest_version_from_redirect_location_header() -> Res
     )?;
 
     assert!(stdout.contains("Resolved version: 9.9.9"));
+    assert!(
+        home.path()
+            .join(".local")
+            .join("bin")
+            .join("codex")
+            .is_file()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn install_script_supports_explicit_internal_release_tag_override() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let internal_release_tag = "internal-hotfix-9.9.9";
+    let codex_path = codex_binary_path()?;
+    let release_base_url = create_release_fixture_with_codex(
+        fixtures.path(),
+        &platform,
+        &codex_path,
+        internal_release_tag,
+    )?;
+
+    let stdout = run_installer_with_release_tag(
+        home.path(),
+        &release_base_url,
+        &platform,
+        internal_release_tag,
+    )?;
+
+    assert!(stdout.contains("Resolved version: internal-hotfix-9.9.9"));
     assert!(
         home.path()
             .join(".local")
@@ -760,8 +832,12 @@ fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
     )?;
     make_executable(&fake_codex_path)?;
 
-    let release_base_url =
-        create_release_fixture_with_codex(fixtures.path(), &platform, &fake_codex_path)?;
+    let release_base_url = create_release_fixture_with_codex(
+        fixtures.path(),
+        &platform,
+        &fake_codex_path,
+        INSTALL_TAG,
+    )?;
 
     let output = Command::new("sh")
         .arg(installer_script_path()?)
