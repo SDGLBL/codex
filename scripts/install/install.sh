@@ -5,6 +5,7 @@ set -eu
 VERSION="${1:-latest}"
 REPOSITORY="${CODEX_INSTALL_REPOSITORY:-SDGLBL/codex}"
 RELEASE_TAG_PREFIX="${CODEX_INSTALL_RELEASE_TAG_PREFIX:-internal-rust-v}"
+RELEASE_TAG_OVERRIDE="${CODEX_INSTALL_RELEASE_TAG:-}"
 RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download}"
 LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
 LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPOSITORY/releases/latest/download/install.sh}"
@@ -161,10 +162,26 @@ resolve_version() {
 
 release_url_for_asset() {
   asset="$1"
-  resolved_version="$2"
-  resolved_tag="$(tag_name_for_version "$resolved_version")"
+  resolved_tag="$2"
 
   printf '%s/%s/%s\n' "${RELEASE_BASE_URL%/}" "$resolved_tag" "$asset"
+}
+
+resolve_release_tag() {
+  if [ -n "$RELEASE_TAG_OVERRIDE" ]; then
+    printf '%s\n' "$RELEASE_TAG_OVERRIDE"
+    return
+  fi
+
+  case "$VERSION" in
+    internal-*)
+      printf '%s\n' "$VERSION"
+      return
+      ;;
+  esac
+
+  resolved_version="$(resolve_version)"
+  tag_name_for_version "$resolved_version"
 }
 
 can_write_dir() {
@@ -417,11 +434,12 @@ fi
 step "$install_mode Codex CLI"
 step "Detected platform: $platform_label"
 
-resolved_version="$(resolve_version)"
+resolved_tag="$(resolve_release_tag)"
+resolved_version="$(normalize_version "$resolved_tag")"
 native_asset="codex-$vendor_target.tar.gz"
 rg_asset="rg-$vendor_target.tar.gz"
-native_download_url="$(release_url_for_asset "$native_asset" "$resolved_version")"
-rg_download_url="$(release_url_for_asset "$rg_asset" "$resolved_version")"
+native_download_url="$(release_url_for_asset "$native_asset" "$resolved_tag")"
+rg_download_url="$(release_url_for_asset "$rg_asset" "$resolved_tag")"
 
 step "Resolved version: $resolved_version"
 
