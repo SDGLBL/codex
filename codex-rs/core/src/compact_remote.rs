@@ -31,6 +31,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompactErrorEventMode {
+    Emit,
+    Suppress,
+}
+
 pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
@@ -45,6 +51,27 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
         CompactionTrigger::Auto,
         reason,
         phase,
+        CompactErrorEventMode::Emit,
+    )
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn try_run_inline_remote_auto_compact_task(
+    sess: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+    initial_context_injection: InitialContextInjection,
+    reason: CompactionReason,
+    phase: CompactionPhase,
+) -> CodexResult<()> {
+    run_remote_compact_task_inner(
+        &sess,
+        &turn_context,
+        initial_context_injection,
+        CompactionTrigger::Auto,
+        reason,
+        phase,
+        CompactErrorEventMode::Suppress,
     )
     .await?;
     Ok(())
@@ -69,6 +96,31 @@ pub(crate) async fn run_remote_compact_task(
         CompactionTrigger::Manual,
         CompactionReason::UserRequested,
         CompactionPhase::StandaloneTurn,
+        CompactErrorEventMode::Emit,
+    )
+    .await
+}
+
+pub(crate) async fn try_run_remote_compact_task(
+    sess: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+) -> CodexResult<()> {
+    let start_event = EventMsg::TurnStarted(TurnStartedEvent {
+        turn_id: turn_context.sub_id.clone(),
+        started_at: turn_context.turn_timing_state.started_at_unix_secs().await,
+        model_context_window: turn_context.model_context_window(),
+        collaboration_mode_kind: turn_context.collaboration_mode.mode,
+    });
+    sess.send_event(&turn_context, start_event).await;
+
+    run_remote_compact_task_inner(
+        &sess,
+        &turn_context,
+        InitialContextInjection::DoNotInject,
+        CompactionTrigger::Manual,
+        CompactionReason::UserRequested,
+        CompactionPhase::StandaloneTurn,
+        CompactErrorEventMode::Suppress,
     )
     .await
 }
@@ -80,6 +132,7 @@ async fn run_remote_compact_task_inner(
     trigger: CompactionTrigger,
     reason: CompactionReason,
     phase: CompactionPhase,
+    compact_error_event_mode: CompactErrorEventMode,
 ) -> CodexResult<()> {
     let attempt = CompactionAnalyticsAttempt::begin(
         sess.as_ref(),
@@ -100,10 +153,12 @@ async fn run_remote_compact_task_inner(
         )
         .await;
     if let Err(err) = result {
-        let event = EventMsg::Error(
-            err.to_error_event(Some("Error running remote compact task".to_string())),
-        );
-        sess.send_event(turn_context, event).await;
+        if matches!(compact_error_event_mode, CompactErrorEventMode::Emit) {
+            let event = EventMsg::Error(
+                err.to_error_event(Some("Error running remote compact task".to_string())),
+            );
+            sess.send_event(turn_context, event).await;
+        }
         return Err(err);
     }
     Ok(())

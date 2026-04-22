@@ -301,8 +301,12 @@ impl ModelProviderInfo {
         self.name == OPENAI_PROVIDER_NAME
     }
 
+    pub fn is_azure_responses_provider(&self) -> bool {
+        is_azure_responses_provider(&self.name, self.base_url.as_deref())
+    }
+
     pub fn supports_remote_compaction(&self) -> bool {
-        self.is_openai() || is_azure_responses_provider(&self.name, self.base_url.as_deref())
+        self.is_openai() || self.is_azure_responses_provider()
     }
 
     pub fn has_command_auth(&self) -> bool {

@@ -15,6 +15,7 @@ use crate::compact::collect_user_messages;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::compact_remote::try_run_inline_remote_auto_compact_task;
 use crate::connectors;
 use crate::feedback_tags;
 use crate::hook_runtime::PendingInputHookDisposition;
@@ -811,14 +812,40 @@ async fn run_auto_compact(
     phase: CompactionPhase,
 ) -> CodexResult<()> {
     if should_use_remote_compact_task(turn_context.provider.info()) {
-        run_inline_remote_auto_compact_task(
-            Arc::clone(sess),
-            Arc::clone(turn_context),
-            initial_context_injection,
-            reason,
-            phase,
-        )
-        .await?;
+        if turn_context.provider.info().is_azure_responses_provider() {
+            let remote_result = try_run_inline_remote_auto_compact_task(
+                Arc::clone(sess),
+                Arc::clone(turn_context),
+                initial_context_injection,
+                reason,
+                phase,
+            )
+            .await;
+            if let Err(err) = remote_result {
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    compact_error = %err,
+                    "azure remote auto compaction failed; falling back to local compaction"
+                );
+                run_inline_auto_compact_task(
+                    Arc::clone(sess),
+                    Arc::clone(turn_context),
+                    initial_context_injection,
+                    reason,
+                    phase,
+                )
+                .await?;
+            }
+        } else {
+            run_inline_remote_auto_compact_task(
+                Arc::clone(sess),
+                Arc::clone(turn_context),
+                initial_context_injection,
+                reason,
+                phase,
+            )
+            .await?;
+        }
     } else {
         run_inline_auto_compact_task(
             Arc::clone(sess),
