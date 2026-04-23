@@ -100,6 +100,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         http_headers: None,
         env_http_headers: None,
         request_max_retries: Some(0),
+        retry_429: None,
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
         websocket_connect_timeout_ms: None,

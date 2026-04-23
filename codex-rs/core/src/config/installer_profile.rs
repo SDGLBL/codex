@@ -124,6 +124,10 @@ fn installer_owned_edits(ak: &str, azure_base_url: &str, model: &str) -> Vec<Con
             value(50),
         ),
         set_path(
+            &["model_providers", AZURE_PROVIDER_ID, "retry_429"],
+            value(true),
+        ),
+        set_path(
             &["model_providers", AZURE_PROVIDER_ID, "stream_max_retries"],
             value(50),
         ),
@@ -392,6 +396,7 @@ mod tests {
             Some("first-ak")
         );
         assert_eq!(config.model_provider.request_max_retries, Some(50));
+        assert_eq!(config.model_provider.retry_429, Some(true));
         assert_eq!(config.model_provider.stream_max_retries, Some(50));
 
         Ok(())

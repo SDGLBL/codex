@@ -196,6 +196,69 @@ data: {"id":"resp-1","output":[{"type":"message","role":"assistant","content":[{
     }
 }
 
+#[derive(Clone)]
+struct Flaky429Transport {
+    state: Arc<Mutex<i64>>,
+}
+
+impl Default for Flaky429Transport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Flaky429Transport {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn attempts(&self) -> i64 {
+        *self
+            .state
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"))
+    }
+}
+
+#[async_trait]
+impl HttpTransport for Flaky429Transport {
+    async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
+        Err(TransportError::Build("execute should not run".to_string()))
+    }
+
+    async fn stream(&self, _req: Request) -> Result<StreamResponse, TransportError> {
+        let mut attempts = self
+            .state
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"));
+        *attempts += 1;
+
+        if *attempts == 1 {
+            return Err(TransportError::Http {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                url: None,
+                headers: None,
+                body: Some("rate limit".to_string()),
+            });
+        }
+
+        let stream = futures::stream::iter(vec![Ok(Bytes::from(
+            r#"event: message
+data: {"id":"resp-429","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}
+
+"#,
+        ))]);
+
+        Ok(StreamResponse {
+            status: StatusCode::OK,
+            headers: HeaderMap::new(),
+            bytes: Box::pin(stream),
+        })
+    }
+}
+
 #[tokio::test]
 async fn responses_client_uses_responses_path() -> Result<()> {
     let state = RecordingState::default();
@@ -264,6 +327,46 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
 
     let mut provider = provider("openai");
     provider.retry.max_attempts = 2;
+
+    let request = ResponsesApiRequest {
+        model: "gpt-test".into(),
+        instructions: "Say hi".into(),
+        input: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+        client_metadata: None,
+        max_output_tokens: None,
+    };
+    let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
+
+    let _stream = client
+        .stream_request(
+            request,
+            ResponsesOptions {
+                compression: Compression::None,
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(transport.attempts(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_retries_on_http_429_when_enabled() -> Result<()> {
+    let transport = Flaky429Transport::new();
+
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+    provider.retry.retry_429 = true;
 
     let request = ResponsesApiRequest {
         model: "gpt-test".into(),

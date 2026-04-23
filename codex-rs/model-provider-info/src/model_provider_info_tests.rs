@@ -24,6 +24,7 @@ base_url = "http://localhost:11434/v1"
         http_headers: None,
         env_http_headers: None,
         request_max_retries: None,
+        retry_429: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
@@ -58,6 +59,7 @@ query_params = { api-version = "2025-04-01-preview" }
         http_headers: None,
         env_http_headers: None,
         request_max_retries: None,
+        retry_429: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
@@ -95,6 +97,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
             "X-Example-Env-Header".to_string() => "EXAMPLE_ENV_VAR".to_string(),
         }),
         request_max_retries: None,
+        retry_429: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
@@ -133,6 +136,47 @@ supports_websockets = true
 }
 
 #[test]
+fn test_deserialize_retry_429() {
+    let provider_toml = r#"
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+retry_429 = true
+        "#;
+
+    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    assert_eq!(provider.retry_429, Some(true));
+}
+
+#[test]
+fn test_to_api_provider_retry_429_defaults_to_false() {
+    let provider = ModelProviderInfo {
+        request_max_retries: Some(7),
+        ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+    };
+
+    let api_provider = provider
+        .to_api_provider(/*auth_mode*/ None)
+        .expect("provider conversion should succeed");
+    assert_eq!(api_provider.retry.max_attempts, 7);
+    assert_eq!(api_provider.retry.retry_429, false);
+}
+
+#[test]
+fn test_to_api_provider_retry_429_honors_config() {
+    let provider = ModelProviderInfo {
+        request_max_retries: Some(7),
+        retry_429: Some(true),
+        ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+    };
+
+    let api_provider = provider
+        .to_api_provider(/*auth_mode*/ None)
+        .expect("provider conversion should succeed");
+    assert_eq!(api_provider.retry.max_attempts, 7);
+    assert_eq!(api_provider.retry.retry_429, true);
+}
+
+#[test]
 fn test_supports_remote_compaction_for_openai() {
     let provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
 
@@ -154,6 +198,7 @@ fn test_supports_remote_compaction_for_azure_name() {
         http_headers: None,
         env_http_headers: None,
         request_max_retries: None,
+        retry_429: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
@@ -179,6 +224,7 @@ fn test_supports_remote_compaction_for_non_openai_non_azure_provider() {
         http_headers: None,
         env_http_headers: None,
         request_max_retries: None,
+        retry_429: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
@@ -254,6 +300,7 @@ fn test_create_amazon_bedrock_provider() {
             http_headers: None,
             env_http_headers: None,
             request_max_retries: None,
+            retry_429: None,
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
             websocket_connect_timeout_ms: None,
