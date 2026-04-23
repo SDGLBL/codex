@@ -52,23 +52,13 @@ Confirm:
 - target upstream tag exists and is stable
 - no unrelated local edits
 
-### Step B: Clear stale candidate PR blockers
-
-List open queue candidate PRs:
-
-```bash
-gh pr list --repo SDGLBL/codex --state open --base queue/internal
-```
-
-Close stale ones before starting a new follow.
-
-### Step C: Build a fresh candidate branch from upstream tag
+### Step B: Build a fresh candidate branch from upstream tag
 
 ```bash
 git switch -C candidate/queue/rust-vX.Y.Z rust-vX.Y.Z
 ```
 
-### Step D: Replay canonical patch stack
+### Step C: Replay canonical patch stack
 
 Get current queue patch commits:
 
@@ -90,7 +80,7 @@ Conflict policy:
 - do not keep conflict-note helper commits (for example commits that only touch `QUEUE_REPLAY_CONFLICTS.md`)
 - keep the patch queue semantically clean and replayable
 
-### Step E: Validate locally
+### Step D: Validate locally
 
 At minimum:
 
@@ -100,23 +90,15 @@ git diff --check
 
 Then run relevant checks/tests for changed Rust crates. If Rust source changed, run formatting and scoped tests per repository policy.
 
-### Step F: Publish candidate and request review
+### Step E: Publish candidate branch
 
 ```bash
 git push -u origin candidate/queue/rust-vX.Y.Z
-gh pr create \
-  --repo SDGLBL/codex \
-  --base queue/internal \
-  --head candidate/queue/rust-vX.Y.Z \
-  --title "Replay rust-vX.Y.Z patch queue (manual Codex flow)" \
-  --body "Manual Codex-driven replay for rust-vX.Y.Z."
 ```
 
-Wait for approval/checks as required by current policy.
+### Step F: Promote refs manually
 
-### Step G: Promote refs manually
-
-After candidate approval:
+After candidate push:
 
 ```bash
 candidate_sha="$(git rev-parse origin/candidate/queue/rust-vX.Y.Z)"
@@ -135,7 +117,7 @@ git push --atomic origin \
   "${upstream_sha}:refs/heads/queue/base/internal"
 ```
 
-### Step H: Tag and trigger internal release
+### Step G: Tag and trigger internal release
 
 ```bash
 git tag -a internal-rust-vX.Y.Z "${candidate_sha}" -m "Internal release for rust-vX.Y.Z"
@@ -154,7 +136,7 @@ gh workflow run internal-rust-release.yml -R SDGLBL/codex \
   -f publish=true
 ```
 
-### Step I: Verify release output
+### Step H: Verify release output
 
 ```bash
 gh release view internal-rust-vX.Y.Z --repo SDGLBL/codex
