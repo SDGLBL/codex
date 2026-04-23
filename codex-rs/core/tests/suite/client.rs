@@ -888,7 +888,6 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         provider,
         SessionSource::Exec,
         config.model_verbosity,
-        /*responses_websockets_enabled_by_feature*/ false,
         /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,

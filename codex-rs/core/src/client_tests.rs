@@ -162,7 +162,6 @@ async fn model_client_with_agent_task(
         provider,
         SessionSource::Cli,
         /*model_verbosity*/ None,
-        /*responses_websockets_enabled_by_feature*/ false,
         /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,

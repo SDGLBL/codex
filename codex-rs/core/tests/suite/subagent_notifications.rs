@@ -538,7 +538,10 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
     let resumed = resume_builder
         .resume(&server, test.home.clone(), child_rollout_path)
         .await?;
-    assert_eq!(resumed.session_configured.session_id.to_string(), spawned_id);
+    assert_eq!(
+        resumed.session_configured.session_id.to_string(),
+        spawned_id
+    );
 
     resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
 
