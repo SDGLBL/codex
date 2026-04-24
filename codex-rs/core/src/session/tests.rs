@@ -337,7 +337,6 @@ fn test_model_client_session() -> crate::client::ModelClientSession {
         ModelProviderInfo::create_openai_provider(/* base_url */ /*base_url*/ None),
         codex_protocol::protocol::SessionSource::Exec,
         /*model_verbosity*/ None,
-        /*responses_websockets_enabled_by_feature*/ false,
         /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
@@ -3301,7 +3300,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             config.model_verbosity,
-            ws_version_from_features(config.as_ref()),
             config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
@@ -3432,6 +3430,7 @@ async fn make_session_with_config_and_rx(
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4617,7 +4616,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             session_configuration.provider.clone(),
             session_configuration.session_source.clone(),
             config.model_verbosity,
-            ws_version_from_features(config.as_ref()),
             config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
@@ -5589,10 +5587,12 @@ async fn record_context_updates_and_set_reference_context_item_persists_split_fi
     let file_system_sandbox_policy = file_system_policy_with_unreadable_glob(&turn_context);
     turn_context.file_system_sandbox_policy = file_system_sandbox_policy.clone();
     let config = session.get_config().await;
+    let conversation_id = ThreadId::default();
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ThreadId::default(),
+            conversation_id,
+            conversation_id,
             /*forked_from_id*/ None,
             SessionSource::Exec,
             BaseInstructions::default(),

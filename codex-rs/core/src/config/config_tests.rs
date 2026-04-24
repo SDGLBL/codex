@@ -5106,6 +5106,7 @@ model_verbosity = "high"
         http_headers: None,
         env_http_headers: None,
         request_max_retries: Some(4),
+        retry_429: None,
         stream_max_retries: Some(10),
         stream_idle_timeout_ms: Some(300_000),
         websocket_connect_timeout_ms: Some(15_000),
