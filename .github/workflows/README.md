@@ -35,5 +35,5 @@ The workflows in this directory are split so that pull requests get fast, review
 ## Internal Rust Releases
 
 - Upstream Rust release following is manual and Codex-driven.
-- Use [`release-playbook/README.md`](../../release-playbook/README.md) for queue replay, promotion, and tag publishing.
-- `internal-rust-release.yml` remains as the build/publish workflow for `internal-rust-v*` tags or manual dispatch.
+- Use [`release-playbook/README.md`](../../release-playbook/README.md) for candidate branch prep and manual release dispatch.
+- `internal-rust-release.yml` is the dispatch-only build/publish workflow for internal releases.

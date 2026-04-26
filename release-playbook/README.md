@@ -1,45 +1,38 @@
-# Codex-Driven Internal Rust Release Playbook
+# Codex-Driven Internal Rust Release Runbook
 
-This is the single source of truth for following upstream Rust releases in `SDGLBL/codex`.
+This runbook is the source of truth for internal Rust releases in `SDGLBL/codex`.
 
-The release process is intentionally manual and Codex-driven:
+The flow is intentionally minimal:
 
-- no automatic upstream tracking
-- no automatic replay PR creation
-- no automatic queue promotion
-- no replay helper scripts
+- keep tracking upstream with `candidate/queue/rust-vX.Y.Z` branches
+- trigger `.github/workflows/internal-rust-release.yml` manually via `workflow_dispatch`
+- keep custom install scripts in release assets (`scripts/install/install.sh`, `scripts/install/install.ps1`)
+
+No automatic upstream tracking, queue promotion, or tag-trigger-only flow is required.
 
 ## 1. Preconditions
 
 Before you start:
 
-1. You have push rights to `queue/internal`, `queue/base/internal`, and `main`.
-2. `gh auth status` is healthy for the `SDGLBL/codex` repo.
-3. Local remotes are configured:
+1. `gh auth status` is healthy for `SDGLBL/codex`.
+2. Local remotes are configured:
    - `origin` -> `SDGLBL/codex`
    - `upstream` -> `openai/codex`
-4. The working tree is clean.
-5. You understand current canonical patch stack policy:
-   - preserve commit `9f3577ad0b` (`wire session id`)
-   - preserve commit `071236452b` (`model max output tokens`)
-   - preserve commit `706e10f586` (`fork sync + internal release automation baseline`)
-   - keep all later fork follow-up changes squashed into a single commit
+3. Working tree is clean.
 
-## 2. Branch And Tag Contract
+## 2. Branch Contract
 
-- `queue/base/internal` points to the upstream stable base tag currently tracked.
-- `queue/internal` is the fork patch queue head.
-- `main` mirrors `queue/internal`.
+- Upstream source tag format: `rust-vX.Y.Z`.
 - Candidate branch format: `candidate/queue/rust-vX.Y.Z`.
 - Internal release tag format: `internal-rust-vX.Y.Z`.
 
-`queue/internal` must stay linear and replayable by cherry-picking onto a new upstream stable tag.
+`candidate/queue/rust-vX.Y.Z` is the only required tracking branch for release follow-up.
 
-## 3. Manual Follow Procedure (Upstream `rust-vX.Y.Z`)
+## 3. Follow Upstream And Create Candidate
 
-Replace `rust-vX.Y.Z` below with the target tag, for example `rust-v0.122.0`.
+Replace `rust-vX.Y.Z` below with the target release, for example `rust-v0.125.0`.
 
-### Step A: Discover and preflight
+### Step A: Fetch and preflight
 
 ```bash
 git fetch origin
@@ -47,40 +40,42 @@ git fetch upstream --tags
 gh release view rust-vX.Y.Z --repo openai/codex
 ```
 
-Confirm:
-
-- target upstream tag exists and is stable
-- no unrelated local edits
-
-### Step B: Build a fresh candidate branch from upstream tag
+### Step B: Create candidate from upstream tag
 
 ```bash
 git switch -C candidate/queue/rust-vX.Y.Z rust-vX.Y.Z
 ```
 
-### Step C: Replay canonical patch stack
+## 4. Port Fork Patches (Semantic Alignment First)
 
-Get current queue patch commits:
+Use the previous candidate branch as the default patch source, then replay fork patches onto the new candidate.
 
 ```bash
-git rev-list --reverse --no-merges origin/queue/base/internal..origin/queue/internal
+git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/origin/candidate/queue/rust-v*
 ```
 
-Replay in order:
+Pick the previous released candidate (example: `origin/candidate/queue/rust-v0.124.0`):
 
 ```bash
-git cherry-pick -x <commit-1>
-git cherry-pick -x <commit-2>
-# ...
+prev_candidate="origin/candidate/queue/rust-v0.124.0"
+prev_upstream_tag="${prev_candidate#origin/candidate/queue/}"
+
+mapfile -t patch_commits < <(
+  git rev-list --reverse --no-merges "${prev_upstream_tag}..${prev_candidate}"
+)
+
+for commit in "${patch_commits[@]}"; do
+  git cherry-pick -x "${commit}"
+done
 ```
 
 Conflict policy:
 
-- preserve fork behavior, adapt to upstream structure
-- do not keep conflict-note helper commits (for example commits that only touch `QUEUE_REPLAY_CONFLICTS.md`)
-- keep the patch queue semantically clean and replayable
+- preserve fork behavior, adapt implementation to upstream changes
+- fixed commit hashes are not required
+- if cherry-pick cannot be cleanly continued, hand-port the change and commit it in a clear, reviewable form
 
-### Step D: Validate locally
+## 5. Validate And Publish Candidate
 
 At minimum:
 
@@ -88,55 +83,29 @@ At minimum:
 git diff --check
 ```
 
-Then run relevant checks/tests for changed Rust crates. If Rust source changed, run formatting and scoped tests per repository policy.
-
-### Step E: Publish candidate branch
+Run relevant formatting/tests for touched crates per repository policy, then push:
 
 ```bash
 git push -u origin candidate/queue/rust-vX.Y.Z
 ```
 
-### Step F: Promote refs manually
+## 6. Trigger Internal Release Action Directly
 
-After candidate push:
-
-```bash
-candidate_sha="$(git rev-parse origin/candidate/queue/rust-vX.Y.Z)"
-upstream_sha="$(git rev-parse rust-vX.Y.Z^{})"
-
-queue_sha="$(git rev-parse origin/queue/internal)"
-main_sha="$(git rev-parse origin/main)"
-base_sha="$(git rev-parse origin/queue/base/internal)"
-
-git push --atomic origin \
-  --force-with-lease=refs/heads/queue/internal:${queue_sha} \
-  --force-with-lease=refs/heads/main:${main_sha} \
-  --force-with-lease=refs/heads/queue/base/internal:${base_sha} \
-  "${candidate_sha}:refs/heads/queue/internal" \
-  "${candidate_sha}:refs/heads/main" \
-  "${upstream_sha}:refs/heads/queue/base/internal"
-```
-
-### Step G: Tag and trigger internal release
+Publish release:
 
 ```bash
-git tag -a internal-rust-vX.Y.Z "${candidate_sha}" -m "Internal release for rust-vX.Y.Z"
-git push origin "refs/tags/internal-rust-vX.Y.Z"
+gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z -f publish=true
 ```
 
-The tag push triggers `.github/workflows/internal-rust-release.yml`.
-
-You can also dispatch manually:
+Dry-run bundle only:
 
 ```bash
-gh workflow run internal-rust-release.yml -R SDGLBL/codex \
-  -f upstream_tag=rust-vX.Y.Z \
-  -f release_ref=candidate/queue/rust-vX.Y.Z \
-  -f internal_tag=internal-rust-vX.Y.Z \
-  -f publish=true
+gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z-dryrun -f publish=false
 ```
 
-### Step H: Verify release output
+## 7. Verify Output
+
+For published releases:
 
 ```bash
 gh release view internal-rust-vX.Y.Z --repo SDGLBL/codex
@@ -144,35 +113,14 @@ gh release view internal-rust-vX.Y.Z --repo SDGLBL/codex
 
 Confirm:
 
-- release exists
-- notes include patch stack from `rust-vX.Y.Z..candidate`
-- expected assets uploaded
+- release exists with expected tag/version
+- release notes show upstream tag and patch stack
+- release assets include internal binaries, `config.schema.json`, `install.sh`, `install.ps1`, and `rg` bundles
 
-## 4. Updating The Canonical Patch Stack
+For dry-run releases, validate uploaded `internal-release-dry-run-*` artifacts in the workflow run.
 
-When fork follow-up changes are needed:
+## 8. Corrective Release
 
-1. Keep the first three preserved commits unchanged.
-2. Add or refresh one squashed follow-up commit for all later fork-specific maintenance.
-3. Ensure `queue/internal` remains linear.
-4. Verify replay onto the latest upstream stable tag before tagging internal release.
+If the follow-up patch port is wrong, fix the candidate branch and run workflow dispatch again with a new internal tag.
 
-## 5. Rollback
-
-If a follow fails after promotion:
-
-1. Create a corrective candidate from the same upstream tag.
-2. Replay corrected patch stack.
-3. Re-promote `queue/internal`/`main` and keep `queue/base/internal` on the same upstream tag.
-4. Cut a new internal tag with the corrected head.
-
-If promotion itself was wrong, restore all three refs together (`queue/internal`, `main`, `queue/base/internal`) from known-good SHAs; never restore only one ref.
-
-## 6. Removed Automation (Intentional)
-
-The following were removed and must not be reintroduced as default flow:
-
-- workflows: `track-upstream-releases`, `prepare-queue-pr`, `promote-queue-pr`, `bootstrap-queue-refs`
-- scripts: `prepare_queue_pr`, `promote_queue_pr`, `bootstrap_queue_refs`, `latest_upstream_release`, `patch_stack_commits`
-
-Codex + this playbook is the required operational path.
+No `queue/internal`, `queue/base/internal`, or `main` promotion step is required in this runbook.
