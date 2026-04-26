@@ -6,6 +6,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::TaskKind;
 use codex_protocol::user_input::UserInput;
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct CompactTask;
@@ -33,7 +34,25 @@ impl SessionTask for CompactTask {
                 /*inc*/ 1,
                 &[("type", "remote")],
             );
-            crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+            if ctx.provider.info().is_azure_responses_provider() {
+                let remote_result = crate::compact_remote::try_run_remote_compact_task(
+                    session.clone(),
+                    ctx.clone(),
+                )
+                .await;
+                if let Err(err) = remote_result {
+                    warn!(
+                        turn_id = %ctx.sub_id,
+                        compact_error = %err,
+                        "azure remote compact failed; falling back to local compact task"
+                    );
+                    crate::compact::run_compact_task(session.clone(), ctx, input).await
+                } else {
+                    Ok(())
+                }
+            } else {
+                crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+            }
         } else {
             session.services.session_telemetry.counter(
                 "codex.task.compact",

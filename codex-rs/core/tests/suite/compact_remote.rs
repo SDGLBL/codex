@@ -789,6 +789,116 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_auto_remote_compact_failure_falls_back_to_local_compact() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let harness = TestCodexHarness::with_builder(
+        test_codex()
+            .with_auth(CodexAuth::from_api_key("dummy"))
+            .with_config(|config| {
+                config.model_provider.name = "azure".to_string();
+                config.model_provider_id = "azure".to_string();
+                config.model_provider.requires_openai_auth = false;
+                config.model_auto_compact_token_limit = Some(120);
+            }),
+    )
+    .await?;
+    let codex = harness.test().codex.clone();
+
+    let responses_mock = responses::mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![
+                responses::ev_assistant_message("initial-assistant", "initial turn complete"),
+                responses::ev_completed_with_tokens(
+                    "initial-response",
+                    /*total_tokens*/ 500_000,
+                ),
+            ]),
+            sse(vec![
+                responses::ev_assistant_message("local-compact-assistant", "LOCAL_COMPACT_SUMMARY"),
+                responses::ev_completed("local-compact-response"),
+            ]),
+            sse(vec![
+                responses::ev_assistant_message("post-compact-assistant", "post compact success"),
+                responses::ev_completed("post-compact-response"),
+            ]),
+        ],
+    )
+    .await;
+
+    let compact_mock = responses::mount_compact_json_once(
+        harness.server(),
+        serde_json::json!({ "output": "invalid compact payload shape" }),
+    )
+    .await;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "turn that exceeds token threshold".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await?;
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let incoming_user_message = "turn that should continue after compact fallback";
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: incoming_user_message.to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await?;
+
+    let mut saw_error = false;
+    loop {
+        match codex.next_event().await.expect("event").msg {
+            EventMsg::Error(_) => saw_error = true,
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    assert!(
+        !saw_error,
+        "expected azure compact fallback to avoid surfacing a remote compact error"
+    );
+    assert_eq!(
+        compact_mock.requests().len(),
+        1,
+        "expected one remote compact attempt before local fallback"
+    );
+
+    let requests = responses_mock.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected initial turn, local compact fallback, and post-compaction turn requests"
+    );
+    let post_compact_turn_request = requests
+        .get(2)
+        .expect("post-compaction request should be present");
+    assert!(
+        post_compact_turn_request
+            .message_input_texts("user")
+            .iter()
+            .any(|message| message == incoming_user_message),
+        "expected post-compaction request to include the incoming user message"
+    );
+
+    Ok(())
+}
+
 #[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result<()> {
@@ -1139,6 +1249,85 @@ async fn remote_manual_compact_failure_emits_task_error_event() -> Result<()> {
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     assert_eq!(compact_mock.requests().len(), 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_manual_remote_compact_failure_falls_back_to_local_compact() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let harness = TestCodexHarness::with_builder(
+        test_codex()
+            .with_auth(CodexAuth::from_api_key("dummy"))
+            .with_config(|config| {
+                config.model_provider.name = "azure".to_string();
+                config.model_provider_id = "azure".to_string();
+                config.model_provider.requires_openai_auth = false;
+            }),
+    )
+    .await?;
+    let codex = harness.test().codex.clone();
+
+    let responses_mock = responses::mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![
+                responses::ev_assistant_message("initial-assistant", "initial turn complete"),
+                responses::ev_completed("initial-response"),
+            ]),
+            sse(vec![
+                responses::ev_assistant_message("local-compact-assistant", "LOCAL_COMPACT_SUMMARY"),
+                responses::ev_completed("local-compact-response"),
+            ]),
+        ],
+    )
+    .await;
+
+    let compact_mock = responses::mount_compact_json_once(
+        harness.server(),
+        serde_json::json!({ "output": "invalid compact payload shape" }),
+    )
+    .await;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "manual compact fallback seed".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await?;
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    codex.submit(Op::Compact).await?;
+
+    let mut saw_error = false;
+    loop {
+        match codex.next_event().await.expect("event").msg {
+            EventMsg::Error(_) => saw_error = true,
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    assert!(
+        !saw_error,
+        "expected azure /compact fallback to avoid surfacing a remote compact error"
+    );
+    assert_eq!(
+        compact_mock.requests().len(),
+        1,
+        "expected one remote compact attempt before local fallback"
+    );
+    assert_eq!(
+        responses_mock.requests().len(),
+        2,
+        "expected initial turn and local compact fallback requests"
+    );
 
     Ok(())
 }

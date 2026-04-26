@@ -2,37 +2,32 @@
 
 set -eu
 
-RELEASE="latest"
-
-BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
-BIN_PATH="$BIN_DIR/codex"
-CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-STANDALONE_ROOT="$CODEX_HOME_DIR/packages/standalone"
-RELEASES_DIR="$STANDALONE_ROOT/releases"
-CURRENT_LINK="$STANDALONE_ROOT/current"
-LOCK_FILE="$STANDALONE_ROOT/install.lock"
-LOCK_DIR="$STANDALONE_ROOT/install.lock.d"
-LOCK_STALE_AFTER_SECS=600
-
+VERSION="${1:-latest}"
+REPOSITORY="${CODEX_INSTALL_REPOSITORY:-SDGLBL/codex}"
+RELEASE_TAG_PREFIX="${CODEX_INSTALL_RELEASE_TAG_PREFIX:-internal-rust-v}"
+RELEASE_TAG_OVERRIDE="${CODEX_INSTALL_RELEASE_TAG:-}"
+RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download}"
+LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
+LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPOSITORY/releases/latest/download/install.sh}"
+INSTALL_DIR=""
+INSTALL_AK=""
+INSTALL_AZURE_BASE_URL=""
+INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
+SHOULD_BOOTSTRAP_INTERNAL_PROFILE="true"
 path_action="already"
 path_profile=""
-conflict_manager=""
-conflict_path=""
-lock_kind=""
-tmp_dir=""
 
 step() {
   printf '==> %s\n' "$1"
-}
-
-warn() {
-  printf 'WARNING: %s\n' "$1" >&2
 }
 
 normalize_version() {
   case "$1" in
     "" | latest)
       printf 'latest\n'
+      ;;
+    internal-rust-v*)
+      printf '%s\n' "${1#internal-rust-v}"
       ;;
     rust-v*)
       printf '%s\n' "${1#rust-v}"
@@ -44,32 +39,6 @@ normalize_version() {
       printf '%s\n' "$1"
       ;;
   esac
-}
-
-parse_args() {
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --release)
-        if [ "$#" -lt 2 ]; then
-          echo "--release requires a value." >&2
-          exit 1
-        fi
-        RELEASE="$2"
-        shift
-        ;;
-      --help | -h)
-        cat <<EOF
-Usage: install.sh [--release VERSION]
-EOF
-        exit 0
-        ;;
-      *)
-        echo "Unknown argument: $1" >&2
-        exit 1
-        ;;
-    esac
-    shift
-  done
 }
 
 download_file() {
@@ -107,97 +76,48 @@ download_text() {
   exit 1
 }
 
-release_url_for_asset() {
-  asset="$1"
-  resolved_version="$2"
-
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
+tag_name_for_version() {
+  printf '%s%s\n' "$RELEASE_TAG_PREFIX" "$1"
 }
 
-release_metadata_url() {
-  resolved_version="$1"
+resolve_version_from_latest_install_url() {
+  if command -v curl >/dev/null 2>&1; then
+    redirect_tag="$(curl -fsSL -D - -o /dev/null "$LATEST_INSTALL_URL" 2>/dev/null | sed -n 's/^[Ll]ocation: .*\/releases\/download\/\(\(internal-\)\{0,1\}rust-v[^/]*\)\/install\.sh.*/\1/p' | head -n 1 | tr -d '\r')"
+    if [ -n "$redirect_tag" ]; then
+      printf '%s\n' "$(normalize_version "$redirect_tag")"
+      return 0
+    fi
 
-  printf 'https://api.github.com/repos/openai/codex/releases/tags/rust-v%s\n' "$resolved_version"
-}
+    effective_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_INSTALL_URL" 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    redirect_tag="$(wget -q -O /dev/null --server-response "$LATEST_INSTALL_URL" 2>&1 | sed -n 's/^[[:space:]]*[Ll]ocation: .*\/releases\/download\/\(\(internal-\)\{0,1\}rust-v[^/]*\)\/install\.sh.*/\1/p' | head -n 1 | tr -d '\r')"
+    if [ -n "$redirect_tag" ]; then
+      printf '%s\n' "$(normalize_version "$redirect_tag")"
+      return 0
+    fi
 
-release_asset_digest() {
-  asset="$1"
-  resolved_version="$2"
-  release_json="$(download_text "$(release_metadata_url "$resolved_version")")"
+    effective_url="$(wget -q -O /dev/null --server-response "$LATEST_INSTALL_URL" 2>&1 | sed -n 's/^[[:space:]]*Location: //p' | tail -n 1 | tr -d '\r')"
+    if [ -z "$effective_url" ]; then
+      effective_url="$LATEST_INSTALL_URL"
+    fi
+  else
+    effective_url=""
+  fi
 
-  digest="$(printf '%s\n' "$release_json" | awk -v asset="$asset" '
-    {
-      if ($0 ~ "\"name\":[[:space:]]*\"" asset "\"") {
-        in_asset = 1
-        asset_depth = depth
-      }
+  if [ -z "$effective_url" ]; then
+    return 1
+  fi
 
-      if (in_asset && /"digest":[[:space:]]*"[^"]+"/) {
-        sub(/^.*"digest":[[:space:]]*"/, "")
-        sub(/".*$/, "")
-        digest = $0
-      }
-
-      line = $0
-      opens = gsub(/\{/, "{", line)
-      closes = gsub(/\}/, "}", line)
-      depth += opens - closes
-
-      if (in_asset && depth < asset_depth) {
-        in_asset = 0
-      }
-    }
-    END {
-      if (digest != "") {
-        print digest
-      }
-    }
-  ')"
-
-  case "$digest" in
-    sha256:????????????????????????????????????????????????????????????????)
-      printf '%s\n' "${digest#sha256:}"
-      ;;
-    *)
-      echo "Could not find SHA-256 digest for release asset $asset." >&2
-      exit 1
+  tag_candidate="${effective_url%/install.sh}"
+  tag_candidate="${tag_candidate##*/}"
+  case "$tag_candidate" in
+    internal-rust-v* | rust-v*)
+      printf '%s\n' "$(normalize_version "$tag_candidate")"
+      return 0
       ;;
   esac
-}
 
-file_sha256() {
-  path="$1"
-
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$path" | awk '{print $1}'
-    return
-  fi
-
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$path" | awk '{print $1}'
-    return
-  fi
-
-  if command -v openssl >/dev/null 2>&1; then
-    openssl dgst -sha256 "$path" | sed 's/^.*= //'
-    return
-  fi
-
-  echo "sha256sum, shasum, or openssl is required to verify the Codex download." >&2
-  exit 1
-}
-
-verify_archive_digest() {
-  archive_path="$1"
-  expected_digest="$2"
-  actual_digest="$(file_sha256 "$archive_path")"
-
-  if [ "$actual_digest" != "$expected_digest" ]; then
-    echo "Downloaded Codex archive checksum did not match release metadata." >&2
-    echo "expected: $expected_digest" >&2
-    echo "actual:   $actual_digest" >&2
-    exit 1
-  fi
+  return 1
 }
 
 require_command() {
@@ -207,16 +127,31 @@ require_command() {
   fi
 }
 
+require_command dirname
+require_command mktemp
+require_command tar
+
 resolve_version() {
-  normalized_version="$(normalize_version "$RELEASE")"
+  normalized_version="$(normalize_version "$VERSION")"
 
   if [ "$normalized_version" != "latest" ]; then
     printf '%s\n' "$normalized_version"
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/openai/codex/releases/latest")"
-  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
+  release_json="$(download_text "$LATEST_RELEASE_URL" 2>/dev/null || true)"
+  resolved_tag="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"\(\(internal-\)\{0,1\}rust-v[^"]*\)".*/\1/p' | head -n 1)"
+  resolved=""
+  if [ -n "$resolved_tag" ]; then
+    resolved="$(normalize_version "$resolved_tag")"
+  fi
+
+  if [ -n "$resolved" ]; then
+    printf '%s\n' "$resolved"
+    return
+  fi
+
+  resolved="$(resolve_version_from_latest_install_url || true)"
 
   if [ -z "$resolved" ]; then
     echo "Failed to resolve the latest Codex release version." >&2
@@ -226,26 +161,79 @@ resolve_version() {
   printf '%s\n' "$resolved"
 }
 
-pick_profile() {
-  # Use the same shell-specific split Homebrew documents because there is no
-  # universal startup file across macOS/Linux login and interactive shells.
-  case "$os:${SHELL:-}" in
-    darwin:*/zsh)
-      printf '%s\n' "$HOME/.zprofile"
-      ;;
-    darwin:*/bash)
-      printf '%s\n' "$HOME/.bash_profile"
-      ;;
-    linux:*/zsh)
-      printf '%s\n' "$HOME/.zshrc"
-      ;;
-    linux:*/bash)
-      printf '%s\n' "$HOME/.bashrc"
-      ;;
-    *)
-      printf '%s\n' "$HOME/.profile"
+release_url_for_asset() {
+  asset="$1"
+  resolved_tag="$2"
+
+  printf '%s/%s/%s\n' "${RELEASE_BASE_URL%/}" "$resolved_tag" "$asset"
+}
+
+resolve_release_tag() {
+  if [ -n "$RELEASE_TAG_OVERRIDE" ]; then
+    printf '%s\n' "$RELEASE_TAG_OVERRIDE"
+    return
+  fi
+
+  case "$VERSION" in
+    internal-*)
+      printf '%s\n' "$VERSION"
+      return
       ;;
   esac
+
+  resolved_version="$(resolve_version)"
+  tag_name_for_version "$resolved_version"
+}
+
+can_write_dir() {
+  dir="$1"
+  probe="$dir"
+
+  while [ ! -e "$probe" ]; do
+    parent="$(dirname "$probe")"
+    if [ "$parent" = "$probe" ]; then
+      break
+    fi
+    probe="$parent"
+  done
+
+  [ -d "$probe" ] && [ -w "$probe" ]
+}
+
+can_write_path() {
+  path="$1"
+
+  if [ -e "$path" ]; then
+    [ -w "$path" ]
+    return
+  fi
+
+  can_write_dir "$(dirname "$path")"
+}
+
+resolve_install_dir() {
+  if [ -n "${CODEX_INSTALL_DIR:-}" ]; then
+    printf '%s\n' "$CODEX_INSTALL_DIR"
+    return
+  fi
+
+  existing_codex="$(command -v codex 2>/dev/null || true)"
+  if [ -n "$existing_codex" ] && [ -f "$existing_codex" ]; then
+    existing_dir="$(dirname "$existing_codex")"
+    if can_write_dir "$existing_dir"; then
+      printf '%s\n' "$existing_dir"
+      return
+    fi
+  fi
+
+  for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+    if can_write_dir "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  printf '%s\n' "$HOME/.local/bin"
 }
 
 add_to_path() {
@@ -253,391 +241,150 @@ add_to_path() {
   path_profile=""
 
   case ":$PATH:" in
-    *":$BIN_DIR:"*)
+    *":$INSTALL_DIR:"*)
       return
       ;;
   esac
 
-  profile="$(pick_profile)"
-  path_profile="$profile"
-  begin_marker="# >>> Codex installer >>>"
-  end_marker="# <<< Codex installer <<<"
-  path_line="export PATH=\"$BIN_DIR:\$PATH\""
+  path_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+  set -- "$HOME/.profile"
+  case "${SHELL:-}" in
+    */zsh)
+      set -- "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.profile"
+      ;;
+    */bash)
+      set -- "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"
+      ;;
+  esac
 
-  if [ -f "$profile" ] && grep -F "$begin_marker" "$profile" >/dev/null 2>&1; then
-    if grep -F "$path_line" "$profile" >/dev/null 2>&1; then
+  for candidate in "$@"; do
+    if [ -f "$candidate" ] && grep -F "$path_line" "$candidate" >/dev/null 2>&1; then
+      path_profile="$candidate"
       path_action="configured"
       return
     fi
-
-    if grep -F "$end_marker" "$profile" >/dev/null 2>&1; then
-      rewrite_path_block "$profile" "$begin_marker" "$end_marker" "$path_line"
-      path_action="updated"
-      return
-    fi
-  fi
-
-  append_path_block "$profile" "$begin_marker" "$end_marker" "$path_line"
-  path_action="added"
-}
-
-append_path_block() {
-  profile="$1"
-  begin_marker="$2"
-  end_marker="$3"
-  path_line="$4"
-
-  {
-    printf '\n%s\n' "$begin_marker"
-    printf '%s\n' "$path_line"
-    printf '%s\n' "$end_marker"
-  } >>"$profile"
-}
-
-rewrite_path_block() {
-  profile="$1"
-  begin_marker="$2"
-  end_marker="$3"
-  path_line="$4"
-  tmp_profile="$tmp_dir/profile.$$.tmp"
-
-  awk -v begin="$begin_marker" -v end="$end_marker" -v line="$path_line" '
-    BEGIN {
-      in_block = 0
-      replaced = 0
-    }
-    $0 == begin {
-      if (!replaced) {
-        print begin
-        print line
-        print end
-        replaced = 1
-      }
-      in_block = 1
-      next
-    }
-    in_block {
-      if ($0 == end) {
-        in_block = 0
-      }
-      next
-    }
-    {
-      print
-    }
-    END {
-      if (in_block != 0) {
-        exit 1
-      }
-    }
-  ' "$profile" >"$tmp_profile"
-  mv "$tmp_profile" "$profile"
-}
-
-mkdir_lock_is_stale() {
-  [ -d "$LOCK_DIR" ] || return 1
-
-  pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-  started_at="$(cat "$LOCK_DIR/started_at" 2>/dev/null || true)"
-  now="$(date +%s 2>/dev/null || printf '0')"
-
-  case "$started_at" in
-    ''|*[!0-9]*)
-      started_at=0
-      ;;
-  esac
-
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    return 1
-  fi
-
-  if [ "$started_at" -eq 0 ] || [ "$now" -eq 0 ]; then
-    return 0
-  fi
-
-  [ $((now - started_at)) -ge "$LOCK_STALE_AFTER_SECS" ]
-}
-
-acquire_install_lock() {
-  mkdir -p "$STANDALONE_ROOT"
-
-  if [ "$os" = "darwin" ] && command -v lockf >/dev/null 2>&1; then
-    : >>"$LOCK_FILE"
-    exec 9<>"$LOCK_FILE"
-    lockf 9
-    lock_kind="lockf"
-    return
-  fi
-
-  if command -v flock >/dev/null 2>&1; then
-    exec 9>"$LOCK_FILE"
-    flock 9
-    lock_kind="flock"
-    return
-  fi
-
-  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    if mkdir_lock_is_stale; then
-      warn "Removing stale installer lock at $LOCK_DIR"
-      rm -rf "$LOCK_DIR"
-      continue
-    fi
-    sleep 1
   done
 
-  printf '%s\n' "$$" >"$LOCK_DIR/pid"
-  date +%s >"$LOCK_DIR/started_at" 2>/dev/null || true
-  lock_kind="mkdir"
-}
-
-release_install_lock() {
-  if [ "$lock_kind" = "mkdir" ]; then
-    rm -rf "$LOCK_DIR" 2>/dev/null || true
-  elif [ "$lock_kind" = "flock" ] || [ "$lock_kind" = "lockf" ]; then
-    exec 9>&- 2>/dev/null || true
-  fi
-  lock_kind=""
-}
-
-cleanup_stale_install_artifacts() {
-  mkdir -p "$RELEASES_DIR" "$STANDALONE_ROOT"
-
-  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -name '.staging.*' -exec rm -rf {} +
-  find "$STANDALONE_ROOT" -mindepth 1 -maxdepth 1 -name '.current.*' -exec rm -f {} +
-
-  if [ -d "$BIN_DIR" ]; then
-    find "$BIN_DIR" -mindepth 1 -maxdepth 1 -name '.codex.*' -exec rm -f {} +
-  fi
-}
-
-replace_path_with_symlink() {
-  link_path="$1"
-  link_target="$2"
-  tmp_link="$3"
-
-  rm -f "$tmp_link"
-  ln -s "$link_target" "$tmp_link"
-
-  if mv -Tf "$tmp_link" "$link_path" 2>/dev/null; then
-    return
-  fi
-
-  if mv -hf "$tmp_link" "$link_path" 2>/dev/null; then
-    return
-  fi
-
-  rm -f "$link_path"
-  mv -f "$tmp_link" "$link_path"
-}
-
-version_from_binary() {
-  codex_path="$1"
-
-  if [ ! -x "$codex_path" ]; then
-    return 1
-  fi
-
-  "$codex_path" --version 2>/dev/null | sed -n 's/.* \([0-9][0-9A-Za-z.+-]*\)$/\1/p' | head -n 1
-}
-
-current_installed_version() {
-  version="$(version_from_binary "$CURRENT_LINK/codex" || true)"
-  if [ -n "$version" ]; then
-    printf '%s\n' "$version"
-    return 0
-  fi
-
-  return 0
-}
-
-resolve_existing_codex() {
-  command -v codex 2>/dev/null || true
-}
-
-classify_existing_codex() {
-  existing_path="$1"
-
-  if [ -z "$existing_path" ] || [ "$existing_path" = "$BIN_PATH" ]; then
-    return 1
-  fi
-
-  case "$existing_path" in
-    /opt/homebrew/* | /usr/local/*)
-      if [ "$os" = "darwin" ]; then
-        printf 'brew\n'
-        return 0
+  for candidate in "$@"; do
+    if can_write_path "$candidate"; then
+      path_profile="$candidate"
+      if {
+        printf '\n# Added by Codex installer\n'
+        printf '%s\n' "$path_line"
+      } >>"$path_profile" 2>/dev/null; then
+        path_action="added"
+      else
+        path_action="manual"
+        path_profile=""
       fi
-      ;;
-  esac
-
-  if [ -f "$existing_path" ] && grep -F "#!/usr/bin/env node" "$existing_path" >/dev/null 2>&1; then
-    case "$existing_path" in
-      *".bun"*)
-        printf 'bun\n'
-        ;;
-      *)
-        printf 'npm\n'
-        ;;
-    esac
-    return 0
-  fi
-
-  return 1
-}
-
-prompt_yes_no() {
-  prompt="$1"
-
-  if ( : </dev/tty ) 2>/dev/null; then
-    printf '%s [y/N] ' "$prompt" >/dev/tty
-    if ! IFS= read -r answer </dev/tty; then
-      return 1
+      return
     fi
-  elif [ -t 0 ]; then
-    printf '%s [y/N] ' "$prompt"
-    if ! IFS= read -r answer; then
-      return 1
-    fi
-  else
-    return 1
-  fi
+  done
 
-  case "$answer" in
-    y | Y | yes | YES)
-      return 0
-      ;;
-    *)
-      return 1
+  path_action="manual"
+}
+
+warn_if_crawl_url() {
+  case "$1" in
+    */v2/crawl|*/v2/crawl/)
+      echo "Warning: CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl. GPT models use the responses API, so this should point at the openapi base URL, not /v2/crawl." >&2
       ;;
   esac
 }
 
-print_launch_instructions() {
-  case "$path_action" in
-    added)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
-      step "PATH was added to $path_profile"
-      ;;
-    updated)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
-      step "PATH was updated in $path_profile"
-      ;;
-    configured)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
-      step "PATH is already configured in $path_profile"
-      ;;
-    *)
-      step "Current terminal: codex"
-      step "Future terminals: open a new terminal and run: codex"
-      ;;
-  esac
-}
-
-maybe_launch_codex_now() {
-  if prompt_yes_no "Start Codex now?"; then
-    step "Launching Codex"
-    "$BIN_PATH"
+prompt_for_install_config() {
+  has_internal_profile="false"
+  config_path="$HOME/.codex/config.toml"
+  if [ -f "$config_path" ] && grep -Eq '^[[:space:]]*\[profiles\.internal\][[:space:]]*$' "$config_path"; then
+    has_internal_profile="true"
   fi
-}
 
-detect_conflicting_install() {
-  existing_path="$(resolve_existing_codex)"
-  manager="$(classify_existing_codex "$existing_path" || true)"
+  if [ -n "${CODEX_INSTALL_AK:-}" ]; then
+    INSTALL_AK="$CODEX_INSTALL_AK"
+  fi
+  if [ -n "${CODEX_INSTALL_AZURE_BASE_URL:-}" ]; then
+    INSTALL_AZURE_BASE_URL="$CODEX_INSTALL_AZURE_BASE_URL"
+  fi
 
-  if [ -z "$manager" ]; then
+  has_bootstrap_overrides="false"
+  if [ -n "$INSTALL_AK" ] || [ -n "$INSTALL_AZURE_BASE_URL" ] || [ -n "$INSTALL_MODEL" ]; then
+    has_bootstrap_overrides="true"
+  fi
+
+  if [ "$has_internal_profile" = "true" ] && [ "$has_bootstrap_overrides" = "false" ]; then
+    SHOULD_BOOTSTRAP_INTERNAL_PROFILE="false"
     return
   fi
 
-  conflict_manager="$manager"
-  conflict_path="$existing_path"
-  step "Detected existing $manager-managed Codex at $existing_path"
-  warn "Multiple managed Codex installs can be ambiguous because PATH order decides which one runs."
-}
-
-handle_conflicting_install() {
-  if [ -z "$conflict_manager" ]; then
+  if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+    warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     return
   fi
 
-  case "$conflict_manager" in
-    brew)
-      uninstall_cmd="brew uninstall --cask codex"
-      ;;
-    bun)
-      uninstall_cmd="bun remove -g @openai/codex"
-      ;;
-    *)
-      uninstall_cmd="npm uninstall -g @openai/codex"
-      ;;
-  esac
-
-  if prompt_yes_no "Uninstall the existing $conflict_manager-managed Codex now?"; then
-    step "Running: $uninstall_cmd"
-    if ! sh -c "$uninstall_cmd"; then
-      warn "Failed to uninstall the existing $conflict_manager-managed Codex. Continuing with the standalone install."
+  if [ "$has_internal_profile" = "true" ]; then
+    if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+      warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     fi
+    return
+  fi
+
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    echo "When bootstrapping a new internal profile, non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+    echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
+    exit 1
+  fi
+
+  if [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    printf 'Enter the internal Azure base URL: ' >/dev/tty
+    IFS= read -r INSTALL_AZURE_BASE_URL </dev/tty || true
+  fi
+
+  if [ -z "$INSTALL_AK" ]; then
+    old_stty=""
+    if command -v stty >/dev/null 2>&1; then
+      old_stty="$(stty -g </dev/tty 2>/dev/null || true)"
+      stty -echo </dev/tty 2>/dev/null || true
+    fi
+
+    printf 'Enter ak for the internal Azure provider: ' >/dev/tty
+    IFS= read -r INSTALL_AK </dev/tty || true
+
+    if [ -n "$old_stty" ]; then
+      stty "$old_stty" </dev/tty 2>/dev/null || true
+    fi
+    printf '\n' >/dev/tty
+  fi
+
+  if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    echo "A non-empty Azure base URL and ak are required to configure the internal profile." >&2
+    exit 1
+  fi
+
+  warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+}
+
+run_internal_profile_bootstrap() {
+  if [ -n "$INSTALL_MODEL" ]; then
+    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
   else
-    warn "Leaving the existing $conflict_manager-managed Codex installed. PATH order will determine which codex runs."
+    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
   fi
 }
 
-install_release() {
-  release_dir="$1"
-  vendor_root="$2"
-  stage_release="$RELEASES_DIR/.staging.$(basename "$release_dir").$$"
-
-  mkdir -p "$RELEASES_DIR"
-  rm -rf "$stage_release"
-  mkdir -p "$stage_release/codex-resources"
-  cp "$vendor_root/codex/codex" "$stage_release/codex"
-  cp "$vendor_root/path/rg" "$stage_release/codex-resources/rg"
-  chmod 0755 "$stage_release/codex"
-  chmod 0755 "$stage_release/codex-resources/rg"
-
-  if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
-    rm -rf "$release_dir"
+print_manual_bootstrap_hint() {
+  if [ -n "$INSTALL_MODEL" ]; then
+    echo "To complete configuration manually, rerun:" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --model \"$INSTALL_MODEL\"" >&2
+  else
+    echo "To complete configuration manually, rerun:" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\"" >&2
   fi
-  mv "$stage_release" "$release_dir"
 }
 
-release_dir_is_complete() {
-  release_dir="$1"
-  expected_version="$2"
-  expected_target="$3"
+uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
+uname_m_value="${CODEX_INSTALL_UNAME_M:-$(uname -m)}"
 
-  [ -d "$release_dir" ] &&
-    [ -x "$release_dir/codex" ] &&
-    [ -x "$release_dir/codex-resources/rg" ] &&
-    [ "$(basename "$release_dir")" = "$expected_version-$expected_target" ]
-}
-
-update_current_link() {
-  release_dir="$1"
-  tmp_link="$STANDALONE_ROOT/.current.$$"
-
-  replace_path_with_symlink "$CURRENT_LINK" "$release_dir" "$tmp_link"
-}
-
-update_visible_command() {
-  mkdir -p "$BIN_DIR"
-  tmp_link="$BIN_DIR/.codex.$$"
-
-  replace_path_with_symlink "$BIN_PATH" "$CURRENT_LINK/codex" "$tmp_link"
-}
-
-verify_visible_command() {
-  "$BIN_PATH" --version >/dev/null
-}
-
-parse_args "$@"
-
-require_command mktemp
-require_command tar
-
-case "$(uname -s)" in
+case "$uname_s_value" in
   Darwin)
     os="darwin"
     ;;
@@ -650,7 +397,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-case "$(uname -m)" in
+case "$uname_m_value" in
   x86_64 | amd64)
     arch="x86_64"
     ;;
@@ -658,111 +405,128 @@ case "$(uname -m)" in
     arch="aarch64"
     ;;
   *)
-    echo "Unsupported architecture: $(uname -m)" >&2
+    echo "Unsupported architecture: $uname_m_value" >&2
     exit 1
     ;;
 esac
 
 if [ "$os" = "darwin" ] && [ "$arch" = "x86_64" ]; then
-  if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then
+  proc_translated="${CODEX_INSTALL_PROC_TRANSLATED:-$(sysctl -n sysctl.proc_translated 2>/dev/null || true)}"
+  if [ "$proc_translated" = "1" ]; then
     arch="aarch64"
   fi
 fi
 
 if [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="darwin-arm64"
     vendor_target="aarch64-apple-darwin"
     platform_label="macOS (Apple Silicon)"
   else
-    npm_tag="darwin-x64"
     vendor_target="x86_64-apple-darwin"
     platform_label="macOS (Intel)"
   fi
 else
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="linux-arm64"
-    vendor_target="aarch64-unknown-linux-musl"
-    platform_label="Linux (ARM64)"
+    echo "Linux (ARM64) is not currently published for the internal release installer." >&2
+    exit 1
   else
-    npm_tag="linux-x64"
     vendor_target="x86_64-unknown-linux-musl"
     platform_label="Linux (x64)"
   fi
 fi
 
-resolved_version="$(resolve_version)"
-asset="codex-npm-$npm_tag-$resolved_version.tgz"
-download_url="$(release_url_for_asset "$asset" "$resolved_version")"
-release_name="$resolved_version-$vendor_target"
-release_dir="$RELEASES_DIR/$release_name"
-current_version="$(current_installed_version)"
-
-if [ -n "$current_version" ] && [ "$current_version" != "$resolved_version" ]; then
-  step "Updating Codex CLI from $current_version to $resolved_version"
-elif [ -n "$current_version" ]; then
-  step "Updating Codex CLI"
+INSTALL_DIR="$(resolve_install_dir)"
+if [ -x "$INSTALL_DIR/codex" ]; then
+  install_mode="Updating"
 else
-  step "Installing Codex CLI"
+  install_mode="Installing"
 fi
-step "Detected platform: $platform_label"
-step "Resolved version: $resolved_version"
 
-detect_conflicting_install
+step "$install_mode Codex CLI"
+step "Detected platform: $platform_label"
+
+resolved_tag="$(resolve_release_tag)"
+resolved_version="$(normalize_version "$resolved_tag")"
+native_asset="codex-$vendor_target.tar.gz"
+rg_asset="rg-$vendor_target.tar.gz"
+native_download_url="$(release_url_for_asset "$native_asset" "$resolved_tag")"
+rg_download_url="$(release_url_for_asset "$rg_asset" "$resolved_tag")"
+
+step "Resolved version: $resolved_version"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
-  release_install_lock
-  if [ -n "$tmp_dir" ]; then
-    rm -rf "$tmp_dir"
-  fi
+  rm -rf "$tmp_dir"
 }
 trap cleanup EXIT INT TERM
 
-acquire_install_lock
-cleanup_stale_install_artifacts
+native_archive_path="$tmp_dir/$native_asset"
+rg_archive_path="$tmp_dir/$rg_asset"
+native_extract_dir="$tmp_dir/native"
+rg_extract_dir="$tmp_dir/rg"
 
-if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"; then
-  if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
-    warn "Found incomplete existing release at $release_dir; reinstalling."
+mkdir -p "$native_extract_dir" "$rg_extract_dir"
+
+step "Downloading Codex CLI"
+download_file "$native_download_url" "$native_archive_path"
+
+step "Downloading bundled rg"
+download_file "$rg_download_url" "$rg_archive_path"
+
+tar -xzf "$native_archive_path" -C "$native_extract_dir"
+tar -xzf "$rg_archive_path" -C "$rg_extract_dir"
+
+step "Installing to $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+cp "$native_extract_dir/codex" "$INSTALL_DIR/codex"
+cp "$rg_extract_dir/rg" "$INSTALL_DIR/rg"
+chmod 0755 "$INSTALL_DIR/codex"
+chmod 0755 "$INSTALL_DIR/rg"
+
+prompt_for_install_config
+
+if [ "$SHOULD_BOOTSTRAP_INTERNAL_PROFILE" = "true" ]; then
+  step "Configuring internal profile"
+  if run_internal_profile_bootstrap; then
+    :
+  else
+    bootstrap_exit="$?"
+    echo "Warning: failed to configure internal profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
+    if run_internal_profile_bootstrap; then
+      echo "Warning: internal profile bootstrap succeeded on retry." >&2
+    else
+      bootstrap_retry_exit="$?"
+      echo "Warning: failed to configure internal profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
+      echo "Warning: Codex CLI is installed, but internal profile setup did not complete." >&2
+      print_manual_bootstrap_hint
+    fi
   fi
-
-  archive_path="$tmp_dir/$asset"
-  extract_dir="$tmp_dir/extract"
-
-  step "Downloading Codex CLI"
-  expected_digest="$(release_asset_digest "$asset" "$resolved_version")"
-  download_file "$download_url" "$archive_path"
-  verify_archive_digest "$archive_path" "$expected_digest"
-
-  mkdir -p "$extract_dir"
-  tar -xzf "$archive_path" -C "$extract_dir"
-
-  step "Installing standalone package to $release_dir"
-  install_release "$release_dir" "$extract_dir/package/vendor/$vendor_target"
+else
+  step "Skipping internal profile bootstrap (existing profile detected with no install overrides)"
 fi
-update_current_link "$release_dir"
-update_visible_command
+
 add_to_path
-verify_visible_command
-release_install_lock
-handle_conflicting_install
 
 case "$path_action" in
   added)
-    print_launch_instructions
-    ;;
-  updated)
-    print_launch_instructions
+    step "PATH updated for future shells in $path_profile"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
+    step "Or open a new terminal and run: codex"
     ;;
   configured)
-    print_launch_instructions
+    step "PATH is already configured for future shells in $path_profile"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
+    step "Or open a new terminal and run: codex"
+    ;;
+  manual)
+    step "Could not update your shell profile automatically"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
+    step "To persist it, add this line to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
   *)
-    step "$BIN_DIR is already on PATH"
-    print_launch_instructions
+    step "$INSTALL_DIR is already on PATH"
+    step "Run: codex"
     ;;
 esac
 
 printf 'Codex CLI %s installed successfully.\n' "$resolved_version"
-maybe_launch_codex_now
