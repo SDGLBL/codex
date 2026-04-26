@@ -310,6 +310,7 @@ async fn persist_reports_filesystem_error_and_retries_buffered_items() -> std::i
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             SessionSource::Exec,
             BaseInstructions::default(),

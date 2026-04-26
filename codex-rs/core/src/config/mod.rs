@@ -120,6 +120,7 @@ use toml_edit::DocumentMut;
 
 pub(crate) mod agent_roles;
 pub mod edit;
+mod installer_profile;
 mod managed_features;
 mod network_proxy_spec;
 mod permissions;
@@ -131,6 +132,9 @@ pub use codex_config::ConstraintResult;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
 use codex_sandboxing::compatibility_sandbox_policy_for_permission_profile;
 pub use codex_sandboxing::system_bwrap_warning;
+pub use installer_profile::BootstrapInternalProfileResult;
+pub use installer_profile::DEFAULT_INTERNAL_PROFILE_MODEL;
+pub use installer_profile::bootstrap_internal_profile;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
@@ -203,12 +207,12 @@ fn resolve_mcp_oauth_credentials_store_mode(
     configured: OAuthCredentialsStoreMode,
     package_version: &str,
 ) -> OAuthCredentialsStoreMode {
-    match (package_version, configured) {
-        (
-            LOCAL_DEV_BUILD_VERSION,
-            OAuthCredentialsStoreMode::Keyring | OAuthCredentialsStoreMode::Auto,
-        ) => OAuthCredentialsStoreMode::File,
-        (_, mode) => mode,
+    match configured {
+        OAuthCredentialsStoreMode::Auto => OAuthCredentialsStoreMode::File,
+        OAuthCredentialsStoreMode::Keyring if package_version == LOCAL_DEV_BUILD_VERSION => {
+            OAuthCredentialsStoreMode::File
+        }
+        mode => mode,
     }
 }
 
