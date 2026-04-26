@@ -318,6 +318,7 @@ impl Session {
                             Arc::clone(&thread_store),
                             CreateThreadParams {
                                 thread_id: conversation_id,
+                                wire_session_id,
                                 forked_from_id,
                                 source: session_source,
                                 base_instructions: BaseInstructions {
