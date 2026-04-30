@@ -359,6 +359,8 @@ impl ContextManager {
     /// 2. every output has a corresponding call entry
     /// 3. when images are unsupported, image content is stripped from messages and tool outputs
     fn normalize_history(&mut self, input_modalities: &[InputModality]) {
+        normalize::reorder_reasoning_before_required_following_item(&mut self.items);
+
         // all function/tool calls must have a corresponding output
         normalize::ensure_call_outputs_present(&mut self.items);
 

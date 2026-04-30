@@ -55,6 +55,7 @@ use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_message_item_added;
 use core_test_support::responses::ev_output_text_delta;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::ev_shell_command_call;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::mount_sse_sequence;
@@ -2407,6 +2408,110 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     assert_eq!(
         body["input"][7]["call_id"].as_str(),
         Some("custom-tool-call-id")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_completed_output_backfills_reasoning_for_follow_up_request() {
+    skip_if_no_network!();
+
+    let server = MockServer::start().await;
+    let call_id = "shell-backfill-1";
+    let command = "echo azure-backfill";
+    let first_response = sse(vec![
+        ev_response_created("resp-1"),
+        ev_shell_command_call(call_id, command),
+        json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "reasoning",
+                        "id": "rs-1",
+                        "summary": [{"type": "summary_text", "text": "thinking"}]
+                    },
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "name": "shell_command",
+                        "arguments": format!("{{\"command\":\"{command}\"}}"),
+                        "call_id": call_id
+                    }
+                ]
+            }
+        }),
+    ]);
+    let second_response = sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]);
+    let request_log = mount_sse_sequence(&server, vec![first_response, second_response]).await;
+
+    let provider = ModelProviderInfo {
+        name: "azure".into(),
+        base_url: Some(format!("{}/openai", server.uri())),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        retry_429: None,
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: Some(5_000),
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_config(move |config| {
+            config.model_provider_id = provider.name.clone();
+            config.model_provider = provider;
+        });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create new conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "run shell".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let requests = request_log.requests();
+    assert_eq!(requests.len(), 2);
+    let follow_up_input = requests[1].input();
+    let reasoning_index = follow_up_input
+        .iter()
+        .position(|item| {
+            item.get("type").and_then(serde_json::Value::as_str) == Some("reasoning")
+                && item.get("id").and_then(serde_json::Value::as_str) == Some("rs-1")
+        })
+        .expect("expected follow-up request to include backfilled reasoning");
+    let function_call_index = follow_up_input
+        .iter()
+        .position(|item| {
+            item.get("type").and_then(serde_json::Value::as_str) == Some("function_call")
+                && item.get("call_id").and_then(serde_json::Value::as_str) == Some(call_id)
+        })
+        .expect("expected follow-up request to include shell function call");
+    assert!(
+        reasoning_index < function_call_index,
+        "expected reasoning to precede function_call in follow-up input, got {follow_up_input:?}"
     );
 }
 

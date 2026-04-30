@@ -84,6 +84,8 @@ pub enum ResponseEvent {
         /// Did the model affirmatively end its turn? Some providers do not set this,
         /// so we rely on fallback logic when this is `None`.
         end_turn: Option<bool>,
+        /// Optional full output list echoed at completion by some providers.
+        output_items: Option<Vec<ResponseItem>>,
     },
     OutputTextDelta(String),
     ToolCallInputDelta {
