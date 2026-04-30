@@ -194,6 +194,52 @@ pub(crate) fn remove_orphan_outputs(items: &mut Vec<ResponseItem>) {
     });
 }
 
+pub(crate) fn reorder_reasoning_before_required_following_item(items: &mut [ResponseItem]) {
+    if items.len() < 2 {
+        return;
+    }
+
+    for idx in 1..items.len() {
+        if !matches!(items[idx], ResponseItem::Reasoning { .. }) {
+            continue;
+        }
+
+        let has_required_following_item = matches!(
+            items.get(idx + 1),
+            Some(ResponseItem::Message {
+                role,
+                ..
+            }) if role == "assistant"
+        ) || matches!(
+            items.get(idx + 1),
+            Some(
+                ResponseItem::FunctionCall { .. }
+                    | ResponseItem::LocalShellCall { .. }
+                    | ResponseItem::CustomToolCall { .. }
+            )
+        );
+        if has_required_following_item {
+            continue;
+        }
+
+        let can_swap_with_previous = matches!(
+            &items[idx - 1],
+            ResponseItem::Message {
+                role,
+                ..
+            } if role == "assistant"
+        ) || matches!(
+            &items[idx - 1],
+            ResponseItem::FunctionCall { .. }
+                | ResponseItem::LocalShellCall { .. }
+                | ResponseItem::CustomToolCall { .. }
+        );
+        if can_swap_with_previous {
+            items.swap(idx - 1, idx);
+        }
+    }
+}
+
 pub(crate) fn remove_corresponding_for(items: &mut Vec<ResponseItem>, item: &ResponseItem) {
     match item {
         ResponseItem::FunctionCall { call_id, .. } => {

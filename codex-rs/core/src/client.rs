@@ -24,6 +24,7 @@
 //! fails, normal stream retry/fallback logic handles recovery on the same turn.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
@@ -1651,10 +1652,61 @@ where
         let mut logged_error = false;
         let mut tx_last_response = Some(tx_last_response);
         let mut items_added: Vec<ResponseItem> = Vec::new();
+        let mut seen_item_keys: HashSet<String> = HashSet::new();
         let mut api_stream = api_stream;
+        let item_event_key = |item: &ResponseItem| -> Option<String> {
+            match item {
+                ResponseItem::Reasoning { id, .. } if !id.is_empty() => {
+                    Some(format!("reasoning:{id}"))
+                }
+                ResponseItem::Message { id: Some(id), .. } if !id.is_empty() => {
+                    Some(format!("message:{id}"))
+                }
+                ResponseItem::FunctionCall { call_id, .. } => Some(format!("function:{call_id}")),
+                ResponseItem::LocalShellCall {
+                    call_id: Some(call_id),
+                    ..
+                } => Some(format!("local_shell:{call_id}")),
+                ResponseItem::LocalShellCall { id: Some(id), .. } if !id.is_empty() => {
+                    Some(format!("local_shell:{id}"))
+                }
+                ResponseItem::ToolSearchCall {
+                    call_id: Some(call_id),
+                    ..
+                } => Some(format!("tool_search:{call_id}")),
+                ResponseItem::ToolSearchCall { id: Some(id), .. } if !id.is_empty() => {
+                    Some(format!("tool_search:{id}"))
+                }
+                ResponseItem::ToolSearchOutput {
+                    call_id: Some(call_id),
+                    ..
+                } => Some(format!("tool_search_output:{call_id}")),
+                ResponseItem::CustomToolCall { call_id, .. } => {
+                    Some(format!("custom_tool:{call_id}"))
+                }
+                ResponseItem::WebSearchCall { id: Some(id), .. } if !id.is_empty() => {
+                    Some(format!("web_search:{id}"))
+                }
+                ResponseItem::ImageGenerationCall { id, .. } if !id.is_empty() => {
+                    Some(format!("image_generation:{id}"))
+                }
+                ResponseItem::FunctionCallOutput { call_id, .. } => {
+                    Some(format!("function_output:{call_id}"))
+                }
+                ResponseItem::CustomToolCallOutput { call_id, .. } => {
+                    Some(format!("custom_tool_output:{call_id}"))
+                }
+                _ => serde_json::to_string(item)
+                    .ok()
+                    .map(|serialized| format!("json:{serialized}")),
+            }
+        };
         while let Some(event) = api_stream.next().await {
             match event {
                 Ok(ResponseEvent::OutputItemDone(item)) => {
+                    if let Some(key) = item_event_key(&item) {
+                        seen_item_keys.insert(key);
+                    }
                     items_added.push(item.clone());
                     if tx_event
                         .send(Ok(ResponseEvent::OutputItemDone(item)))
@@ -1667,6 +1719,7 @@ where
                 Ok(ResponseEvent::Completed {
                     response_id,
                     token_usage,
+                    output_items,
                 }) => {
                     if let Some(usage) = &token_usage {
                         session_telemetry.sse_event_completed(
@@ -1676,6 +1729,17 @@ where
                             Some(usage.reasoning_output_tokens),
                             usage.total_tokens,
                         );
+                    }
+                    if let Some(output_items) = output_items.as_ref() {
+                        for item in output_items {
+                            if let Some(key) = item_event_key(item) {
+                                if seen_item_keys.contains(&key) {
+                                    continue;
+                                }
+                                seen_item_keys.insert(key);
+                            }
+                            items_added.push(item.clone());
+                        }
                     }
                     inference_trace_attempt.record_completed(
                         &response_id,
@@ -1692,6 +1756,7 @@ where
                         .send(Ok(ResponseEvent::Completed {
                             response_id,
                             token_usage,
+                            output_items,
                         }))
                         .await
                         .is_err()

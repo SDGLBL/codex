@@ -81,6 +81,7 @@ pub enum ResponseEvent {
     Completed {
         response_id: String,
         token_usage: Option<TokenUsage>,
+        output_items: Option<Vec<ResponseItem>>,
     },
     OutputTextDelta(String),
     ToolCallInputDelta {

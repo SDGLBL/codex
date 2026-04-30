@@ -123,6 +123,8 @@ struct ResponseCompleted {
     id: String,
     #[serde(default)]
     usage: Option<ResponseCompletedUsage>,
+    #[serde(default)]
+    output: Option<Vec<ResponseItem>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -382,6 +384,7 @@ pub fn process_responses_event(
                         return Ok(Some(ResponseEvent::Completed {
                             response_id: resp.id,
                             token_usage: resp.usage.map(Into::into),
+                            output_items: resp.output,
                         }));
                     }
                     Err(err) => {
@@ -704,9 +707,11 @@ mod tests {
             Ok(ResponseEvent::Completed {
                 response_id,
                 token_usage,
+                output_items,
             }) => {
                 assert_eq!(response_id, "resp1");
                 assert!(token_usage.is_none());
+                assert!(output_items.is_none());
             }
             other => panic!("unexpected third event: {other:?}"),
         }
@@ -843,9 +848,63 @@ mod tests {
             Ok(ResponseEvent::Completed {
                 response_id,
                 token_usage,
+                output_items,
             }) => {
                 assert_eq!(response_id, "resp1");
                 assert!(token_usage.is_none());
+                assert!(output_items.is_none());
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parses_completed_output_items() {
+        let completed = json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp1",
+                "output": [
+                    {
+                        "type": "reasoning",
+                        "id": "rs_1",
+                        "summary": [
+                            {"type": "summary_text", "text": "thinking"}
+                        ]
+                    },
+                    {
+                        "type": "function_call",
+                        "id": "fc_1",
+                        "call_id": "call-1",
+                        "name": "shell_command",
+                        "arguments": "{\"command\":\"echo hi\"}"
+                    }
+                ]
+            }
+        })
+        .to_string();
+
+        let sse = format!("event: response.completed\ndata: {completed}\n\n");
+        let events = collect_events(&[sse.as_bytes()]).await;
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            Ok(ResponseEvent::Completed {
+                response_id,
+                token_usage,
+                output_items: Some(output_items),
+            }) => {
+                assert_eq!(response_id, "resp1");
+                assert!(token_usage.is_none());
+                assert_eq!(output_items.len(), 2);
+                assert_matches!(
+                    &output_items[0],
+                    ResponseItem::Reasoning { id, .. } if id == "rs_1"
+                );
+                assert_matches!(
+                    &output_items[1],
+                    ResponseItem::FunctionCall { call_id, .. } if call_id == "call-1"
+                );
             }
             other => panic!("unexpected event: {other:?}"),
         }
@@ -1148,7 +1207,8 @@ mod tests {
             &events[1],
             ResponseEvent::Completed {
                 response_id,
-                token_usage: None
+                token_usage: None,
+                output_items: None,
             } if response_id == "resp-1"
         );
     }
@@ -1184,7 +1244,8 @@ mod tests {
             &events[2],
             ResponseEvent::Completed {
                 response_id,
-                token_usage: None
+                token_usage: None,
+                output_items: None,
             } if response_id == "resp-1"
         );
     }
@@ -1218,7 +1279,8 @@ mod tests {
             &events[1],
             ResponseEvent::Completed {
                 response_id,
-                token_usage: None
+                token_usage: None,
+                output_items: None,
             } if response_id == "resp-1"
         );
     }

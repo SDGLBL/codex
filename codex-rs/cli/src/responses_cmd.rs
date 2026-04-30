@@ -78,8 +78,9 @@ fn response_event_to_json(event: codex_api::ResponseEvent) -> serde_json::Value 
         codex_api::ResponseEvent::Completed {
             response_id,
             token_usage,
+            output_items,
         } => {
-            let response = match token_usage {
+            let mut response = match token_usage {
                 Some(token_usage) => json!({
                     "id": response_id,
                     "usage": {
@@ -96,6 +97,9 @@ fn response_event_to_json(event: codex_api::ResponseEvent) -> serde_json::Value 
                 }),
                 None => json!({ "id": response_id }),
             };
+            if let Some(output_items) = output_items {
+                response["output"] = json!(output_items);
+            }
             json!({ "type": "response.completed", "response": response })
         }
         codex_api::ResponseEvent::OutputTextDelta(delta) => {
@@ -165,6 +169,7 @@ mod tests {
                 reasoning_output_tokens: 3,
                 total_tokens: 17,
             }),
+            output_items: None,
         });
         assert_eq!(
             completed,
@@ -190,6 +195,7 @@ mod tests {
         let completed_without_usage = response_event_to_json(codex_api::ResponseEvent::Completed {
             response_id: "resp-2".to_string(),
             token_usage: None,
+            output_items: None,
         });
         assert_eq!(
             completed_without_usage,

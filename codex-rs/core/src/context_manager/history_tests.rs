@@ -1370,6 +1370,41 @@ fn normalize_removes_orphan_custom_tool_call_output() {
     assert_eq!(h.raw_items(), vec![]);
 }
 
+#[test]
+fn normalize_reorders_late_reasoning_before_function_call() {
+    let reasoning = ResponseItem::Reasoning {
+        id: "rs-late".to_string(),
+        summary: vec![ReasoningItemReasoningSummary::SummaryText {
+            text: "thinking".to_string(),
+        }],
+        content: None,
+        encrypted_content: None,
+    };
+    let function_call = ResponseItem::FunctionCall {
+        id: None,
+        name: "shell_command".to_string(),
+        namespace: None,
+        arguments: "{\"command\":\"echo hi\"}".to_string(),
+        call_id: "call-late".to_string(),
+    };
+    let function_output = ResponseItem::FunctionCallOutput {
+        call_id: "call-late".to_string(),
+        output: FunctionCallOutputPayload::from_text("ok".to_string()),
+    };
+
+    let mut h = create_history_with_items(vec![
+        function_call.clone(),
+        reasoning.clone(),
+        function_output.clone(),
+    ]);
+    h.normalize_history(&default_input_modalities());
+
+    assert_eq!(
+        h.raw_items(),
+        vec![reasoning, function_call, function_output]
+    );
+}
+
 #[cfg(not(debug_assertions))]
 #[test]
 fn normalize_mixed_inserts_and_removals() {

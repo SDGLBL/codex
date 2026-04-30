@@ -1934,8 +1934,52 @@ async fn try_run_sampling_request(
     let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
+    let mut completed_output_item_keys: HashSet<String> = HashSet::new();
+    let completed_output_item_key = |item: &ResponseItem| -> Option<String> {
+        match item {
+            ResponseItem::Reasoning { id, .. } if !id.is_empty() => Some(format!("reasoning:{id}")),
+            ResponseItem::Message { id: Some(id), .. } if !id.is_empty() => {
+                Some(format!("message:{id}"))
+            }
+            ResponseItem::FunctionCall { call_id, .. } => Some(format!("function:{call_id}")),
+            ResponseItem::LocalShellCall {
+                call_id: Some(call_id),
+                ..
+            } => Some(format!("local_shell:{call_id}")),
+            ResponseItem::LocalShellCall { id: Some(id), .. } if !id.is_empty() => {
+                Some(format!("local_shell:{id}"))
+            }
+            ResponseItem::ToolSearchCall {
+                call_id: Some(call_id),
+                ..
+            } => Some(format!("tool_search:{call_id}")),
+            ResponseItem::ToolSearchCall { id: Some(id), .. } if !id.is_empty() => {
+                Some(format!("tool_search:{id}"))
+            }
+            ResponseItem::ToolSearchOutput {
+                call_id: Some(call_id),
+                ..
+            } => Some(format!("tool_search_output:{call_id}")),
+            ResponseItem::CustomToolCall { call_id, .. } => Some(format!("custom_tool:{call_id}")),
+            ResponseItem::WebSearchCall { id: Some(id), .. } if !id.is_empty() => {
+                Some(format!("web_search:{id}"))
+            }
+            ResponseItem::ImageGenerationCall { id, .. } if !id.is_empty() => {
+                Some(format!("image_generation:{id}"))
+            }
+            ResponseItem::FunctionCallOutput { call_id, .. } => {
+                Some(format!("function_output:{call_id}"))
+            }
+            ResponseItem::CustomToolCallOutput { call_id, .. } => {
+                Some(format!("custom_tool_output:{call_id}"))
+            }
+            _ => serde_json::to_string(item)
+                .ok()
+                .map(|serialized| format!("json:{serialized}")),
+        }
+    };
     let receiving_span = trace_span!("receiving_stream");
-    let outcome: CodexResult<SamplingRequestResult> = loop {
+    let outcome: CodexResult<SamplingRequestResult> = 'sampling_loop: loop {
         let handle_responses = trace_span!(
             parent: &receiving_span,
             "handle_responses",
@@ -1973,6 +2017,9 @@ async fn try_run_sampling_request(
         match event {
             ResponseEvent::Created => {}
             ResponseEvent::OutputItemDone(item) => {
+                if let Some(key) = completed_output_item_key(&item) {
+                    completed_output_item_keys.insert(key);
+                }
                 if let Some((_, mut consumer)) = active_tool_argument_diff_consumer.take()
                     && let Some(event) = consumer.flush_on_complete()
                 {
@@ -2158,7 +2205,79 @@ async fn try_run_sampling_request(
             ResponseEvent::Completed {
                 response_id: _,
                 token_usage,
+                output_items,
             } => {
+                if let Some(output_items) = output_items {
+                    for item in output_items {
+                        if let Some(key) = completed_output_item_key(&item) {
+                            if completed_output_item_keys.contains(&key) {
+                                continue;
+                            }
+                            completed_output_item_keys.insert(key);
+                        }
+                        if let Some((_, mut consumer)) = active_tool_argument_diff_consumer.take()
+                            && let Some(event) = consumer.flush_on_complete()
+                        {
+                            sess.send_event(&turn_context, event).await;
+                        }
+
+                        let previously_active_item = active_item.take();
+                        if let Some(previous) = previously_active_item.as_ref()
+                            && matches!(previous, TurnItem::AgentMessage(_))
+                        {
+                            let item_id = previous.id();
+                            flush_assistant_text_segments_for_item(
+                                &sess,
+                                &turn_context,
+                                plan_mode_state.as_mut(),
+                                &mut assistant_message_stream_parsers,
+                                &item_id,
+                            )
+                            .await;
+                        }
+
+                        if let Some(state) = plan_mode_state.as_mut()
+                            && handle_assistant_item_done_in_plan_mode(
+                                &sess,
+                                &turn_context,
+                                &item,
+                                state,
+                                previously_active_item.as_ref(),
+                                &mut last_agent_message,
+                            )
+                            .await
+                        {
+                            continue;
+                        }
+
+                        let mut ctx = HandleOutputCtx {
+                            sess: sess.clone(),
+                            turn_context: turn_context.clone(),
+                            tool_runtime: tool_runtime.clone(),
+                            cancellation_token: cancellation_token.child_token(),
+                        };
+
+                        let output_result =
+                            match handle_output_item_done(&mut ctx, item, previously_active_item)
+                                .instrument(trace_span!(
+                                    parent: &receiving_span,
+                                    "handle_completed_output_item"
+                                ))
+                                .await
+                            {
+                                Ok(output_result) => output_result,
+                                Err(err) => break 'sampling_loop Err(err),
+                            };
+                        if let Some(tool_future) = output_result.tool_future {
+                            in_flight.push_back(tool_future);
+                        }
+                        if let Some(agent_message) = output_result.last_agent_message {
+                            last_agent_message = Some(agent_message);
+                        }
+                        needs_follow_up |= output_result.needs_follow_up;
+                    }
+                }
+
                 flush_assistant_text_segments_all(
                     &sess,
                     &turn_context,
