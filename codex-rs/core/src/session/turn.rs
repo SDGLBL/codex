@@ -2210,20 +2210,17 @@ async fn try_run_sampling_request(
                             cancellation_token: cancellation_token.child_token(),
                         };
 
-                        let output_result = match handle_output_item_done(
-                            &mut ctx,
-                            item,
-                            previously_active_item,
-                        )
-                        .instrument(trace_span!(
-                            parent: &receiving_span,
-                            "handle_completed_output_item"
-                        ))
-                        .await
-                        {
-                            Ok(output_result) => output_result,
-                            Err(err) => break 'sampling_loop Err(err),
-                        };
+                        let output_result =
+                            match handle_output_item_done(&mut ctx, item, previously_active_item)
+                                .instrument(trace_span!(
+                                    parent: &receiving_span,
+                                    "handle_completed_output_item"
+                                ))
+                                .await
+                            {
+                                Ok(output_result) => output_result,
+                                Err(err) => break 'sampling_loop Err(err),
+                            };
                         if let Some(tool_future) = output_result.tool_future {
                             in_flight.push_back(tool_future);
                         }

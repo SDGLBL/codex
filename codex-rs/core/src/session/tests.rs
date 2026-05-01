@@ -4590,6 +4590,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
         Arc::clone(&thread_store),
         CreateThreadParams {
             thread_id: session.conversation_id,
+            wire_session_id: session.conversation_id,
             forked_from_id: None,
             source: SessionSource::Exec,
             base_instructions: BaseInstructions::default(),

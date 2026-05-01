@@ -396,9 +396,9 @@ async fn apply_patch_after_request_permissions(strict_auto_review: bool) -> Resu
     ];
     if strict_auto_review {
         sse_sequence.push(sse(vec![
-            ev_response_created(&format!("{response_prefix}-guardian")),
+            ev_response_created(&format!("{response_prefix}-guardian-1")),
             ev_assistant_message(
-                "msg-strict-request-permissions-patch-guardian",
+                "msg-strict-request-permissions-patch-guardian-1",
                 &serde_json::json!({
                     "risk_level": "low",
                     "user_authorization": "high",
@@ -407,7 +407,23 @@ async fn apply_patch_after_request_permissions(strict_auto_review: bool) -> Resu
                 })
                 .to_string(),
             ),
-            ev_completed(&format!("{response_prefix}-guardian")),
+            ev_completed(&format!("{response_prefix}-guardian-1")),
+        ]));
+        // In strict auto-review mode, apply_patch can require a second guardian
+        // approval when retrying after an initial sandbox denial.
+        sse_sequence.push(sse(vec![
+            ev_response_created(&format!("{response_prefix}-guardian-2")),
+            ev_assistant_message(
+                "msg-strict-request-permissions-patch-guardian-2",
+                &serde_json::json!({
+                    "risk_level": "low",
+                    "user_authorization": "high",
+                    "outcome": "allow",
+                    "rationale": "Retry without sandbox stays within the strict turn grant.",
+                })
+                .to_string(),
+            ),
+            ev_completed(&format!("{response_prefix}-guardian-2")),
         ]));
     }
     sse_sequence.push(sse(vec![
