@@ -63,6 +63,7 @@ pub(super) async fn spawn_review_thread(
             .enabled(Feature::MultiAgentV2)
             .then_some(config.multi_agent_v2.min_wait_timeout_ms),
     )
+    .with_wait_agent_max_timeout_ms(Some(config.wait_agent_max_timeout_ms))
     .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
         &config.agent_roles,
     ));

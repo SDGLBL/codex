@@ -762,11 +762,22 @@ async fn spawn_agent_description_uses_configured_usage_hint_text() {
 }
 
 #[tokio::test]
-async fn multi_agent_v2_wait_agent_schema_uses_configured_min_timeout() {
-    let wait_agent_min_timeout_ms = Some(60_000);
-    let tools_config = multi_agent_v2_tools_config()
-        .await
-        .with_wait_agent_min_timeout_ms(wait_agent_min_timeout_ms);
+async fn wait_agent_schema_uses_configured_max_timeout() {
+    let config = test_config().await;
+    let model_info = construct_model_info_offline("gpt-5.4", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        permission_profile: &PermissionProfile::Disabled,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    })
+    .with_wait_agent_max_timeout_ms(Some(120_000));
     let (tools, _) = build_specs(
         &tools_config,
         /*mcp_tools*/ None,
@@ -786,7 +797,39 @@ async fn multi_agent_v2_wait_agent_schema_uses_configured_min_timeout() {
 
     assert_eq!(
         timeout_description,
-        Some("Optional timeout in milliseconds. Defaults to 60000, min 60000, max 86400000.")
+        Some(
+            "Optional timeout in milliseconds. Defaults to 30000, min 10000, max 120000. Prefer longer waits (minutes) to avoid busy polling."
+        )
+    );
+}
+
+#[tokio::test]
+async fn multi_agent_v2_wait_agent_schema_uses_configured_min_timeout() {
+    let wait_agent_min_timeout_ms = Some(60_000);
+    let tools_config = multi_agent_v2_tools_config()
+        .await
+        .with_wait_agent_min_timeout_ms(wait_agent_min_timeout_ms)
+        .with_wait_agent_max_timeout_ms(Some(120_000));
+    let (tools, _) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*deferred_mcp_tools*/ None,
+        &[],
+    )
+    .build();
+    let wait_agent = find_tool(&tools, "wait_agent");
+    let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = &wait_agent.spec else {
+        panic!("wait_agent should be a function tool");
+    };
+    let timeout_description = parameters
+        .properties
+        .as_ref()
+        .and_then(|properties| properties.get("timeout_ms"))
+        .and_then(|schema| schema.description.as_deref());
+
+    assert_eq!(
+        timeout_description,
+        Some("Optional timeout in milliseconds. Defaults to 60000, min 60000, max 120000.")
     );
 }
 

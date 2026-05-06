@@ -1388,7 +1388,6 @@
         },
         "min_wait_timeout_ms": {
           "format": "int64",
-          "maximum": 86400000.0,
           "minimum": 1.0,
           "type": "integer"
         },
@@ -2328,6 +2327,14 @@
           "description": "Enable the `view_image` tool that lets the agent attach local images.",
           "type": "boolean"
         },
+        "wait_agent": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/WaitAgentToolConfigToml"
+            }
+          ],
+          "description": "Configuration for the `wait_agent` tool."
+        },
         "web_search": {
           "allOf": [
             {
@@ -3138,6 +3145,18 @@
         "high"
       ],
       "type": "string"
+    },
+    "WaitAgentToolConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "max_timeout_ms": {
+          "description": "Maximum timeout in milliseconds that the `wait_agent` tool may wait.",
+          "format": "int64",
+          "minimum": 1.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
     },
     "WebSearchContextSize": {
       "enum": [

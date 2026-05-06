@@ -169,7 +169,7 @@ pub(crate) const AGENTS_MD_MAX_BYTES: usize = 32 * 1024; // 32 KiB
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION: usize = 4;
 pub(crate) const DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
-pub(crate) const MAX_MULTI_AGENT_V2_WAIT_TIMEOUT_MS: i64 = 24 * 3600 * 1000;
+pub(crate) const DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS: i64 = 24 * 3600 * 1000;
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 const LOCAL_DEV_BUILD_VERSION: &str = "0.0.0";
@@ -596,6 +596,9 @@ pub struct Config {
 
     /// Token budget applied when storing tool/function outputs in the context manager.
     pub tool_output_token_limit: Option<usize>,
+
+    /// Maximum timeout in milliseconds that the wait_agent tool may wait.
+    pub wait_agent_max_timeout_ms: i64,
 
     /// Maximum number of agent threads that can be open concurrently.
     pub agent_max_threads: Option<usize>,
@@ -1802,6 +1805,25 @@ fn resolve_web_search_config(
     }
 }
 
+fn resolve_wait_agent_max_timeout_ms(
+    config_toml: &ConfigToml,
+    config_profile: &ConfigProfile,
+) -> i64 {
+    config_profile
+        .tools
+        .as_ref()
+        .and_then(|tools| tools.wait_agent.as_ref())
+        .and_then(|wait_agent| wait_agent.max_timeout_ms)
+        .or_else(|| {
+            config_toml
+                .tools
+                .as_ref()
+                .and_then(|tools| tools.wait_agent.as_ref())
+                .and_then(|wait_agent| wait_agent.max_timeout_ms)
+        })
+        .unwrap_or(DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS)
+}
+
 fn resolve_multi_agent_v2_config(
     config_toml: &ConfigToml,
     config_profile: &ConfigProfile,
@@ -2403,6 +2425,7 @@ impl Config {
             .unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg, &config_profile);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
+        let wait_agent_max_timeout_ms = resolve_wait_agent_max_timeout_ms(&cfg, &config_profile);
         let apps_mcp_path_override = if features.enabled(Feature::AppsMcpPathOverride) {
             let base = apps_mcp_path_override_toml_config(cfg.features.as_ref());
             let profile = apps_mcp_path_override_toml_config(config_profile.features.as_ref());
@@ -2449,6 +2472,12 @@ impl Config {
 
         let history = cfg.history.unwrap_or_default();
 
+        if wait_agent_max_timeout_ms <= 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "tools.wait_agent.max_timeout_ms must be at least 1",
+            ));
+        }
         if multi_agent_v2.max_concurrent_threads_per_session == 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -2461,11 +2490,20 @@ impl Config {
                 "features.multi_agent_v2.min_wait_timeout_ms must be at least 1",
             ));
         }
-        if multi_agent_v2.min_wait_timeout_ms > MAX_MULTI_AGENT_V2_WAIT_TIMEOUT_MS {
+        if wait_agent_max_timeout_ms < DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!(
-                    "features.multi_agent_v2.min_wait_timeout_ms must be at most {MAX_MULTI_AGENT_V2_WAIT_TIMEOUT_MS}"
+                    "tools.wait_agent.max_timeout_ms must be at least {DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS}"
+                ),
+            ));
+        }
+        if wait_agent_max_timeout_ms < multi_agent_v2.min_wait_timeout_ms {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "tools.wait_agent.max_timeout_ms must be at least features.multi_agent_v2.min_wait_timeout_ms ({})",
+                    multi_agent_v2.min_wait_timeout_ms
                 ),
             ));
         }
@@ -2883,6 +2921,7 @@ impl Config {
                 })
                 .collect(),
             tool_output_token_limit: cfg.tool_output_token_limit,
+            wait_agent_max_timeout_ms,
             agent_max_threads,
             agent_max_depth,
             agent_roles,

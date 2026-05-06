@@ -20,6 +20,7 @@ use codex_config::config_toml::RealtimeTransport;
 use codex_config::config_toml::RealtimeWsMode;
 use codex_config::config_toml::RealtimeWsVersion;
 use codex_config::config_toml::ToolsToml;
+use codex_config::config_toml::WaitAgentToolConfigToml;
 use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::FilesystemPermissionToml;
 use codex_config::permissions_toml::FilesystemPermissionsToml;
@@ -369,6 +370,7 @@ web_search = true
         cfg.tools,
         Some(ToolsToml {
             web_search: None,
+            wait_agent: None,
             view_image: None,
         })
     );
@@ -388,6 +390,29 @@ web_search = false
         cfg.tools,
         Some(ToolsToml {
             web_search: None,
+            wait_agent: None,
+            view_image: None,
+        })
+    );
+}
+
+#[test]
+fn tools_wait_agent_config_deserializes() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+[tools.wait_agent]
+max_timeout_ms = 900000
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    assert_eq!(
+        cfg.tools,
+        Some(ToolsToml {
+            web_search: None,
+            wait_agent: Some(WaitAgentToolConfigToml {
+                max_timeout_ms: Some(900_000),
+            }),
             view_image: None,
         })
     );
@@ -6302,6 +6327,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
             project_doc_fallback_filenames: Vec::new(),
             tool_output_token_limit: None,
+            wait_agent_max_timeout_ms: DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS,
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
             agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
             agent_roles: BTreeMap::new(),
@@ -6499,6 +6525,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
+        wait_agent_max_timeout_ms: DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
@@ -6650,6 +6677,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
+        wait_agent_max_timeout_ms: DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
@@ -6786,6 +6814,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
+        wait_agent_max_timeout_ms: DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
@@ -8281,6 +8310,10 @@ hide_spawn_agent_metadata = true
     assert!(config.features.enabled(Feature::MultiAgentV2));
     assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 5);
     assert_eq!(config.multi_agent_v2.min_wait_timeout_ms, 2500);
+    assert_eq!(
+        config.wait_agent_max_timeout_ms,
+        DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS
+    );
     assert_eq!(config.agent_max_threads, Some(4));
     assert!(!config.multi_agent_v2.usage_hint_enabled);
     assert_eq!(
@@ -8296,6 +8329,53 @@ hide_spawn_agent_metadata = true
         Some("Subagent guidance.")
     );
     assert!(config.multi_agent_v2.hide_spawn_agent_metadata);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_agent_max_timeout_from_tools_config() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"[tools.wait_agent]
+max_timeout_ms = 900000
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    assert_eq!(config.wait_agent_max_timeout_ms, 900_000);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn profile_wait_agent_max_timeout_overrides_base() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"profile = "slow"
+
+[tools.wait_agent]
+max_timeout_ms = 900000
+
+[profiles.slow.tools.wait_agent]
+max_timeout_ms = 1800000
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    assert_eq!(config.wait_agent_max_timeout_ms, 1_800_000);
 
     Ok(())
 }
@@ -8371,6 +8451,10 @@ enabled = true
 
     assert_eq!(config.multi_agent_v2.max_concurrent_threads_per_session, 4);
     assert_eq!(config.multi_agent_v2.min_wait_timeout_ms, 10_000);
+    assert_eq!(
+        config.wait_agent_max_timeout_ms,
+        DEFAULT_WAIT_AGENT_MAX_TIMEOUT_MS
+    );
     assert_eq!(config.agent_max_threads, Some(3));
 
     Ok(())
@@ -8429,11 +8513,16 @@ min_wait_timeout_ms = 0
         "features.multi_agent_v2.min_wait_timeout_ms must be at least 1"
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_agent_rejects_invalid_max_timeout() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
-        r#"[features.multi_agent_v2]
-enabled = true
-min_wait_timeout_ms = 86400001
+        r#"[tools.wait_agent]
+max_timeout_ms = 0
 "#,
     )?;
 
@@ -8442,12 +8531,42 @@ min_wait_timeout_ms = 86400001
         .fallback_cwd(Some(codex_home.path().to_path_buf()))
         .build()
         .await
-        .expect_err("too large min_wait_timeout_ms should be rejected");
+        .expect_err("zero max_timeout_ms should be rejected");
 
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
         err.to_string(),
-        "features.multi_agent_v2.min_wait_timeout_ms must be at most 86400000"
+        "tools.wait_agent.max_timeout_ms must be at least 1"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn wait_agent_rejects_max_timeout_below_min_timeout() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"[tools.wait_agent]
+max_timeout_ms = 20000
+
+[features.multi_agent_v2]
+enabled = true
+min_wait_timeout_ms = 30000
+"#,
+    )?;
+
+    let err = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await
+        .expect_err("max_timeout_ms below min_wait_timeout_ms should be rejected");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        err.to_string(),
+        "tools.wait_agent.max_timeout_ms must be at least features.multi_agent_v2.min_wait_timeout_ms (30000)"
     );
 
     Ok(())
