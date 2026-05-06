@@ -786,7 +786,7 @@ async fn multi_agent_v2_wait_agent_schema_uses_configured_min_timeout() {
 
     assert_eq!(
         timeout_description,
-        Some("Optional timeout in milliseconds. Defaults to 60000, min 60000, max 3600000.")
+        Some("Optional timeout in milliseconds. Defaults to 60000, min 60000, max 86400000.")
     );
 }
 
