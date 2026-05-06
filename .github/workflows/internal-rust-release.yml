@@ -74,7 +74,7 @@ jobs:
     needs: meta
     name: Build - ${{ matrix.runner }} - ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
+    timeout-minutes: 360
     defaults:
       run:
         working-directory: codex-rs
