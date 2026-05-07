@@ -1,7 +1,5 @@
 use super::*;
 use std::collections::HashMap;
-use std::time::Duration;
-use tokio::time::Instant;
 use tokio::time::timeout_at;
 
 pub(crate) struct Handler;
@@ -27,19 +25,20 @@ impl ToolHandler for Handler {
         } = invocation;
         let arguments = function_arguments(payload)?;
         let args: WaitArgs = parse_arguments(&arguments)?;
+        let max_timeout_ms = turn.config.wait_agent_max_timeout_ms.max(1);
         let timeout_ms = args.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
         let min_timeout_ms = turn
             .config
             .multi_agent_v2
             .min_wait_timeout_ms
-            .clamp(1, MAX_WAIT_TIMEOUT_MS);
+            .clamp(1, max_timeout_ms);
         let timeout_ms = match timeout_ms {
             ms if ms <= 0 => {
                 return Err(FunctionCallError::RespondToModel(
                     "timeout_ms must be greater than zero".to_owned(),
                 ));
             }
-            ms => ms.clamp(min_timeout_ms, MAX_WAIT_TIMEOUT_MS),
+            ms => ms.clamp(min_timeout_ms, max_timeout_ms),
         };
 
         let mut mailbox_seq_rx = session.subscribe_mailbox_seq();
@@ -60,7 +59,7 @@ impl ToolHandler for Handler {
         let timed_out = if session.has_pending_mailbox_items().await {
             false
         } else {
-            let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+            let deadline = wait_timeout_deadline(timeout_ms);
             !wait_for_mailbox_change(&mut mailbox_seq_rx, deadline).await
         };
         let result = WaitAgentResult::from_timed_out(timed_out);
@@ -128,10 +127,14 @@ impl ToolOutput for WaitAgentResult {
 
 async fn wait_for_mailbox_change(
     mailbox_seq_rx: &mut tokio::sync::watch::Receiver<u64>,
-    deadline: Instant,
+    deadline: Option<tokio::time::Instant>,
 ) -> bool {
-    match timeout_at(deadline, mailbox_seq_rx.changed()).await {
-        Ok(Ok(())) => true,
-        Ok(Err(_)) | Err(_) => false,
+    if let Some(deadline) = deadline {
+        match timeout_at(deadline, mailbox_seq_rx.changed()).await {
+            Ok(Ok(())) => true,
+            Ok(Err(_)) | Err(_) => false,
+        }
+    } else {
+        mailbox_seq_rx.changed().await.is_ok()
     }
 }

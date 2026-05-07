@@ -25,6 +25,7 @@ jobs:
     # Ultimately we need true distributed builds (e.g.,
     # https://www.buildbuddy.io/docs/rbe-setup/) to speed things up.
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:

@@ -175,10 +175,12 @@ impl MemoryStartupContext {
         let model_client = ModelClient::new(
             Some(Arc::clone(&self.auth_manager)),
             self.thread_id,
+            self.thread_id,
             installation_id,
             config.model_provider.clone(),
             session_source,
             config.model_verbosity,
+            config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
             /*beta_features_header*/ None,

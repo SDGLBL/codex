@@ -1,4 +1,4 @@
-<p align="center"><code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
+<p align="center"><code>curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash</code></p>
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
   <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
@@ -14,7 +14,30 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ### Installing and running Codex CLI
 
-Install globally with your preferred package manager:
+Install with the GitHub release installer:
+
+```shell
+curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash
+```
+
+Pin a specific release:
+
+```shell
+curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash -s -- 0.104.0
+```
+
+You can customize the install with:
+
+```shell
+CODEX_INSTALL_DIR="$HOME/bin" CODEX_INSTALL_AK="your-ak" \
+CODEX_INSTALL_AZURE_BASE_URL="https://your-internal-endpoint" \
+CODEX_INSTALL_MODEL="gpt-5.4-2026-03-05" \
+  curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash
+```
+
+The installer downloads the native release binary for your platform, installs `rg`, and bootstraps the internal Azure-backed `internal` profile. `ak`, the Azure base URL, and the optional default model are supplied at install time instead of being hardcoded in the repo. If `CODEX_INSTALL_MODEL` is unset, the installer keeps the existing `profiles.internal.model` when present, otherwise it writes `gpt-5.4-2026-03-05`. Linux defaults to the musl release assets.
+
+You can also install with your preferred package manager:
 
 ```shell
 # Install using npm
@@ -29,7 +52,7 @@ brew install --cask codex
 Then simply run `codex` to get started.
 
 <details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+<summary>You can also go to the <a href="https://github.com/SDGLBL/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
 
 Each GitHub Release contains many executables, but in practice, you likely want one of these:
 
@@ -38,7 +61,6 @@ Each GitHub Release contains many executables, but in practice, you likely want 
   - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
 - Linux
   - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
 
 Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
 

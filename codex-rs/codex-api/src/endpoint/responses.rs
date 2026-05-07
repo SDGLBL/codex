@@ -31,6 +31,7 @@ pub struct ResponsesClient<T: HttpTransport> {
 #[derive(Default)]
 pub struct ResponsesOptions {
     pub conversation_id: Option<String>,
+    pub wire_session_id: Option<String>,
     pub session_source: Option<SessionSource>,
     pub extra_headers: HeaderMap,
     pub compression: Compression,
@@ -73,6 +74,7 @@ impl<T: HttpTransport> ResponsesClient<T> {
     ) -> Result<ResponseStream, ApiError> {
         let ResponsesOptions {
             conversation_id,
+            wire_session_id,
             session_source,
             extra_headers,
             compression,
@@ -89,7 +91,9 @@ impl<T: HttpTransport> ResponsesClient<T> {
         if let Some(ref conv_id) = conversation_id {
             insert_header(&mut headers, "x-client-request-id", conv_id);
         }
-        headers.extend(build_conversation_headers(conversation_id));
+        headers.extend(build_conversation_headers(
+            wire_session_id.or(conversation_id),
+        ));
         if let Some(subagent) = subagent_header(&session_source) {
             insert_header(&mut headers, "x-openai-subagent", &subagent);
         }

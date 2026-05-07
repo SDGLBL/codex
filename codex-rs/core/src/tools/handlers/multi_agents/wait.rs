@@ -6,9 +6,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::watch::Receiver;
-use tokio::time::Instant;
 
 use tokio::time::timeout_at;
 
@@ -59,6 +57,8 @@ impl ToolHandler for Handler {
             });
         }
 
+        let max_timeout_ms = turn.config.wait_agent_max_timeout_ms.max(1);
+        let min_timeout_ms = MIN_WAIT_TIMEOUT_MS.clamp(1, max_timeout_ms);
         let timeout_ms = args.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
         let timeout_ms = match timeout_ms {
             ms if ms <= 0 => {
@@ -66,7 +66,7 @@ impl ToolHandler for Handler {
                     "timeout_ms must be greater than zero".to_owned(),
                 ));
             }
-            ms => ms.clamp(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS),
+            ms => ms.clamp(min_timeout_ms, max_timeout_ms),
         };
 
         session
@@ -128,15 +128,19 @@ impl ToolHandler for Handler {
                 futures.push(wait_for_final_status(session, id, rx));
             }
             let mut results = Vec::new();
-            let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+            let deadline = wait_timeout_deadline(timeout_ms);
             loop {
-                match timeout_at(deadline, futures.next()).await {
-                    Ok(Some(Some(result))) => {
+                let next_result = match deadline {
+                    Some(deadline) => timeout_at(deadline, futures.next()).await.ok(),
+                    None => Some(futures.next().await),
+                };
+                match next_result {
+                    Some(Some(Some(result))) => {
                         results.push(result);
                         break;
                     }
-                    Ok(Some(None)) => continue,
-                    Ok(None) | Err(_) => break,
+                    Some(Some(None)) => continue,
+                    Some(None) | None => break,
                 }
             }
             if !results.is_empty() {

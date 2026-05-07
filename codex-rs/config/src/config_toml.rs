@@ -83,6 +83,9 @@ pub struct ConfigToml {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// Optional cap on the model's output token budget.
+    pub model_max_output_tokens: Option<i64>,
+
     /// Default approval policy for executing commands.
     pub approval_policy: Option<AskForApproval>,
 
@@ -543,6 +546,9 @@ pub struct ToolsToml {
     )]
     pub web_search: Option<WebSearchToolConfig>,
 
+    /// Configuration for the `wait_agent` tool.
+    pub wait_agent: Option<WaitAgentToolConfigToml>,
+
     /// Enable the `view_image` tool that lets the agent attach local images.
     #[serde(default)]
     pub view_image: Option<bool>,
@@ -626,6 +632,14 @@ impl From<ToolsToml> for Tools {
             view_image: tools_toml.view_image,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct WaitAgentToolConfigToml {
+    /// Maximum timeout in milliseconds that the `wait_agent` tool may wait.
+    #[schemars(range(min = 1))]
+    pub max_timeout_ms: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]

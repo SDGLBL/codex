@@ -44,7 +44,7 @@ const CODEX_APPS_MCP_SERVER_NAME: &str = "codex_apps";
 const DEFAULT_AGENT_TYPE_DESCRIPTION: &str = "Test agent type description.";
 const DEFAULT_WAIT_TIMEOUT_MS: i64 = 30_000;
 const MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
-const MAX_WAIT_TIMEOUT_MS: i64 = 3_600_000;
+const MAX_WAIT_TIMEOUT_MS: i64 = 86_400_000;
 
 #[test]
 fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {

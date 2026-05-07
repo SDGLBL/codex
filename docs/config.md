@@ -76,6 +76,18 @@ The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schem
 the configured model provider. It can be set globally in `config.toml` or inside
 profiles, and profile values override the top-level setting.
 
+## Wait Agent Timeouts
+
+`tools.wait_agent.max_timeout_ms` caps the `timeout_ms` accepted by the
+`wait_agent` tool. The default is 24 hours. It applies to both legacy
+multi-agent and multi-agent v2 waits, and profiles can override the top-level
+value.
+
+```toml
+[tools.wait_agent]
+max_timeout_ms = 86400000
+```
+
 ## SQLite State DB
 
 Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
