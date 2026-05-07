@@ -278,7 +278,7 @@ async fn run_remote_compact_task_inner_impl(
 pub(crate) async fn process_compacted_history(
     sess: &Session,
     turn_context: &TurnContext,
-    mut compacted_history: Vec<ResponseItem>,
+    compacted_history: Vec<ResponseItem>,
     initial_context_injection: InitialContextInjection,
 ) -> Vec<ResponseItem> {
     // Mid-turn compaction is the only path that must inject initial context above the last user
@@ -293,11 +293,11 @@ pub(crate) async fn process_compacted_history(
         Vec::new()
     };
 
-    compacted_history.retain(should_keep_compacted_history_item);
+    let compacted_history = retain_compacted_history_items(compacted_history);
     insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context)
 }
 
-/// Returns whether an item from remote compaction output should be preserved.
+/// Filters remote compaction output to items safe to preserve in live history.
 ///
 /// Called while processing the model-provided compacted transcript, before we
 /// append fresh canonical context from the current session.
@@ -308,11 +308,40 @@ pub(crate) async fn process_compacted_history(
 /// - non-user-content `user` messages (session prefix/instruction wrappers),
 ///   while preserving real user messages and persisted hook prompts.
 ///
+/// Assistant messages are only kept with an immediately preceding reasoning item; otherwise the
+/// next Responses request can fail because the message refers to reasoning content that is absent.
+///
 /// This intentionally keeps:
-/// - `assistant` messages (future remote compaction models may emit them)
 /// - `user`-role warnings and compaction-generated summary messages because
 ///   they parse as `TurnItem::UserMessage`.
-fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
+fn retain_compacted_history_items(items: Vec<ResponseItem>) -> Vec<ResponseItem> {
+    let mut retained = Vec::with_capacity(items.len());
+    let mut pending_reasoning = None;
+
+    for item in items {
+        match &item {
+            ResponseItem::Reasoning { .. } => {
+                pending_reasoning = Some(item);
+            }
+            ResponseItem::Message { role, .. } if role == "assistant" => {
+                if let Some(reasoning) = pending_reasoning.take() {
+                    retained.push(reasoning);
+                    retained.push(item);
+                }
+            }
+            _ => {
+                pending_reasoning = None;
+                if should_keep_non_reasoning_compacted_history_item(&item) {
+                    retained.push(item);
+                }
+            }
+        }
+    }
+
+    retained
+}
+
+fn should_keep_non_reasoning_compacted_history_item(item: &ResponseItem) -> bool {
     match item {
         ResponseItem::Message { role, .. } if role == "developer" => false,
         ResponseItem::Message { role, .. } if role == "user" => {
@@ -321,7 +350,6 @@ fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
                 Some(TurnItem::UserMessage(_) | TurnItem::HookPrompt(_))
             )
         }
-        ResponseItem::Message { role, .. } if role == "assistant" => true,
         ResponseItem::Message { .. } => false,
         ResponseItem::Compaction { .. } => true,
         ResponseItem::Reasoning { .. }

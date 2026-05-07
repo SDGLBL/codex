@@ -2,6 +2,8 @@ use super::*;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use pretty_assertions::assert_eq;
 
 async fn process_compacted_history_with_test_session(
@@ -21,6 +23,54 @@ async fn process_compacted_history_with_test_session(
     )
     .await;
     (refreshed, initial_context)
+}
+
+async fn process_compacted_history_without_initial_context(
+    compacted_history: Vec<ResponseItem>,
+) -> Vec<ResponseItem> {
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        compacted_history,
+        InitialContextInjection::DoNotInject,
+    )
+    .await
+}
+
+fn reasoning_item(id: &str) -> ResponseItem {
+    ResponseItem::Reasoning {
+        id: id.to_string(),
+        summary: vec![ReasoningItemReasoningSummary::SummaryText {
+            text: "thinking".to_string(),
+        }],
+        content: Some(vec![ReasoningItemContent::ReasoningText {
+            text: "raw reasoning".to_string(),
+        }]),
+        encrypted_content: Some(format!("encrypted-{id}")),
+    }
+}
+
+fn assistant_item(id: &str, text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: Some(id.to_string()),
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+    }
+}
+
+fn user_item(id: &str, text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: Some(id.to_string()),
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+    }
 }
 
 #[test]
@@ -252,6 +302,41 @@ async fn process_compacted_history_replaces_developer_messages() {
         phase: None,
     });
     assert_eq!(refreshed, expected);
+}
+
+#[tokio::test]
+async fn process_compacted_history_retains_ordered_reasoning_assistant_pair() {
+    let reasoning = reasoning_item("rs-keep");
+    let assistant = assistant_item("msg-keep", "kept assistant");
+    let compacted_history = vec![reasoning.clone(), assistant.clone()];
+
+    let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
+
+    assert_eq!(refreshed, vec![reasoning, assistant]);
+}
+
+#[tokio::test]
+async fn process_compacted_history_drops_orphan_assistant_messages() {
+    let compacted_history = vec![assistant_item("msg-orphan", "orphan assistant")];
+
+    let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
+
+    assert_eq!(refreshed, Vec::<ResponseItem>::new());
+}
+
+#[tokio::test]
+async fn process_compacted_history_drops_misordered_or_separated_assistant_messages() {
+    let user = user_item("user-separator", "separator");
+    let compacted_history = vec![
+        assistant_item("msg-before", "assistant before reasoning"),
+        reasoning_item("rs-separated"),
+        user.clone(),
+        assistant_item("msg-separated", "assistant separated from reasoning"),
+    ];
+
+    let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
+
+    assert_eq!(refreshed, vec![user]);
 }
 
 #[tokio::test]

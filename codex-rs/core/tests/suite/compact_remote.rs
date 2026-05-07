@@ -1566,7 +1566,7 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
                         if encrypted_content == "ENCRYPTED_COMPACTION_SUMMARY"
                 )
             });
-            let has_compacted_assistant_note = replacement_history.iter().any(|item| {
+            let has_orphan_compacted_assistant_note = replacement_history.iter().any(|item| {
                 matches!(
                     item,
                     ResponseItem::Message { role, content, .. }
@@ -1590,7 +1590,11 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
                 )
             });
 
-            if has_compaction_item && has_compacted_assistant_note {
+            if has_compaction_item {
+                assert!(
+                    !has_orphan_compacted_assistant_note,
+                    "manual remote compact rollout replacement history should drop orphan assistant messages"
+                );
                 assert!(
                     !has_permissions_developer_message,
                     "manual remote compact rollout replacement history should not inject permissions context"
