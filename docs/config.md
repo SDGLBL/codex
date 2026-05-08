@@ -26,3 +26,9 @@ When enabled, Codex appends a `Co-authored-by:` trailer using the configured
 attribution value. If `commit_attribution` is omitted, Codex uses
 `Codex <noreply@openai.com>`. Set `commit_attribution = ""` to disable the
 trailer while leaving the feature flag enabled.
+
+## Model output limits
+
+`model_max_output_tokens` lets you cap the maximum output tokens requested from
+the configured model provider. It can be set globally in `config.toml` or inside
+profiles, and profile values override the top-level setting.

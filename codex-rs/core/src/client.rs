@@ -143,6 +143,7 @@ const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=20
 const RESPONSES_ENDPOINT: &str = "/responses";
 const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
 const MEMORIES_SUMMARIZE_ENDPOINT: &str = "/memories/trace_summarize";
+
 #[cfg(test)]
 pub(crate) const WEBSOCKET_CONNECT_TIMEOUT: Duration =
     Duration::from_millis(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
@@ -167,6 +168,7 @@ struct ModelClientState {
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
+    model_max_output_tokens: Option<i64>,
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
@@ -312,6 +314,7 @@ impl ModelClient {
         provider_info: ModelProviderInfo,
         session_source: SessionSource,
         model_verbosity: Option<VerbosityConfig>,
+        model_max_output_tokens: Option<i64>,
         enable_request_compression: bool,
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
@@ -333,6 +336,7 @@ impl ModelClient {
                 auth_env_telemetry,
                 session_source,
                 model_verbosity,
+                model_max_output_tokens,
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
@@ -462,6 +466,7 @@ impl ModelClient {
             service_tier,
             prompt_cache_key,
             text,
+            max_output_tokens,
             ..
         } = request;
         let client =
@@ -477,6 +482,7 @@ impl ModelClient {
             service_tier: service_tier.as_deref(),
             prompt_cache_key: prompt_cache_key.as_deref(),
             text,
+            max_output_tokens,
         };
 
         let mut extra_headers = ApiHeaderMap::new();
@@ -730,6 +736,7 @@ impl ModelClient {
                 X_CODEX_INSTALLATION_ID_HEADER.to_string(),
                 self.state.installation_id.clone(),
             )])),
+            max_output_tokens: self.state.model_max_output_tokens,
         };
         Ok(request)
     }
