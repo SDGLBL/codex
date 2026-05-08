@@ -5,6 +5,7 @@ use crate::Prompt;
 use crate::compact::CompactionAnalyticsAttempt;
 use crate::compact::InitialContextInjection;
 use crate::compact::compaction_status_from_result;
+use crate::compact::content_items_to_text;
 use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
@@ -22,6 +23,7 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
@@ -327,6 +329,8 @@ fn retain_compacted_history_items(items: Vec<ResponseItem>) -> Vec<ResponseItem>
                 if let Some(reasoning) = pending_reasoning.take() {
                     retained.push(reasoning);
                     retained.push(item);
+                } else if let Some(summary) = assistant_message_as_user_summary(&item) {
+                    retained.push(summary);
                 }
             }
             _ => {
@@ -339,6 +343,29 @@ fn retain_compacted_history_items(items: Vec<ResponseItem>) -> Vec<ResponseItem>
     }
 
     retained
+}
+
+fn assistant_message_as_user_summary(item: &ResponseItem) -> Option<ResponseItem> {
+    let ResponseItem::Message { content, .. } = item else {
+        return None;
+    };
+    let text = content_items_to_text(content)?;
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let summary_prefix = crate::compact::SUMMARY_PREFIX.trim_end();
+    let text = if text.starts_with(summary_prefix) {
+        text.to_string()
+    } else {
+        format!("{summary_prefix}\n{text}")
+    };
+    Some(ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText { text }],
+        phase: None,
+    })
 }
 
 fn should_keep_non_reasoning_compacted_history_item(item: &ResponseItem) -> bool {
