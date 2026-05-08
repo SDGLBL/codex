@@ -2784,19 +2784,8 @@ impl ThreadRequestProcessor {
         };
 
         if let Some((existing_thread_id, existing_thread, source_thread)) = running_thread {
-            let existing_thread_rollout_path = existing_thread.rollout_path();
-            let active_path = existing_thread_rollout_path
-                .as_ref()
-                .or(source_thread.rollout_path.as_ref());
-            if let (Some(requested_path), Some(active_path)) = (params.path.as_ref(), active_path)
-                && requested_path != active_path
-            {
-                return Err(invalid_request(format!(
-                    "cannot resume running thread {existing_thread_id} with stale path: requested `{}`, active `{}`",
-                    requested_path.display(),
-                    active_path.display()
-                )));
-            }
+            // Internal remote home directories can be symlinked, so direct
+            // rollout path comparison can false-positive here.
             let config_snapshot = existing_thread.config_snapshot().await;
             let mismatch_details = collect_resume_override_mismatches(params, &config_snapshot);
             if !mismatch_details.is_empty() {
