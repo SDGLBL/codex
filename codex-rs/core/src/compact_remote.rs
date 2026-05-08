@@ -5,6 +5,7 @@ use crate::client::CompactConversationRequestSettings;
 use crate::compact::CompactionAnalyticsAttempt;
 use crate::compact::InitialContextInjection;
 use crate::compact::compaction_status_from_result;
+use crate::compact::content_items_to_text;
 use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
@@ -28,6 +29,7 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
@@ -270,7 +272,7 @@ async fn run_remote_compact_task_inner_impl(
 pub(crate) async fn process_compacted_history(
     sess: &Session,
     turn_context: &TurnContext,
-    mut compacted_history: Vec<ResponseItem>,
+    compacted_history: Vec<ResponseItem>,
     initial_context_injection: InitialContextInjection,
 ) -> Vec<ResponseItem> {
     // Mid-turn compaction is the only path that must inject initial context above the last user
@@ -285,11 +287,12 @@ pub(crate) async fn process_compacted_history(
         Vec::new()
     };
 
-    compacted_history.retain(should_keep_compacted_history_item);
+    let compacted_history = retain_compacted_history_items(compacted_history);
+
     insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context)
 }
 
-/// Returns whether an item from remote compaction output should be preserved.
+/// Filters remote compaction output to items safe to preserve in live history.
 ///
 /// Called while processing the model-provided compacted transcript, before we
 /// append fresh canonical context from the current session.
@@ -300,12 +303,77 @@ pub(crate) async fn process_compacted_history(
 /// - non-user-content `user` messages (session prefix/instruction wrappers),
 ///   while preserving real user messages and persisted hook prompts.
 ///
+/// Assistant messages are only kept with an immediately preceding reasoning item that carries
+/// encrypted content; otherwise the next Responses request can fail because the message refers to
+/// reasoning content that is absent or unavailable to the server.
+///
 /// This intentionally keeps:
-/// - `assistant` messages (future remote compaction models may emit them)
 /// - `user`-role warnings that parse as `TurnItem::UserMessage` and compaction-generated summary
 ///   messages. Legacy warning fragments are filtered by `parse_turn_item` before they reach this
 ///   check.
+fn retain_compacted_history_items(items: Vec<ResponseItem>) -> Vec<ResponseItem> {
+    let mut retained = Vec::with_capacity(items.len());
+    let mut pending_reasoning = None;
+
+    for item in items {
+        match &item {
+            ResponseItem::Reasoning {
+                encrypted_content: Some(encrypted_content),
+                ..
+            } if !encrypted_content.is_empty() => {
+                pending_reasoning = Some(item);
+            }
+            ResponseItem::Reasoning { .. } => {
+                pending_reasoning = None;
+            }
+            ResponseItem::Message { role, .. } if role == "assistant" => {
+                if let Some(reasoning) = pending_reasoning.take() {
+                    retained.push(reasoning);
+                    retained.push(item);
+                } else if let Some(summary) = assistant_message_as_user_summary(&item) {
+                    retained.push(summary);
+                }
+            }
+            _ => {
+                pending_reasoning = None;
+                if should_keep_non_reasoning_compacted_history_item(&item) {
+                    retained.push(item);
+                }
+            }
+        }
+    }
+
+    retained
+}
+
+fn assistant_message_as_user_summary(item: &ResponseItem) -> Option<ResponseItem> {
+    let ResponseItem::Message { content, .. } = item else {
+        return None;
+    };
+    let text = content_items_to_text(content)?;
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let summary_prefix = crate::compact::SUMMARY_PREFIX.trim_end();
+    let text = if text.starts_with(summary_prefix) {
+        text.to_string()
+    } else {
+        format!("{summary_prefix}\n{text}")
+    };
+    Some(ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText { text }],
+        phase: None,
+    })
+}
+
 pub(crate) fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
+    should_keep_non_reasoning_compacted_history_item(item)
+}
+
+fn should_keep_non_reasoning_compacted_history_item(item: &ResponseItem) -> bool {
     match item {
         ResponseItem::Message { role, .. } if role == "developer" => false,
         ResponseItem::Message { role, .. } if role == "user" => {
@@ -314,7 +382,6 @@ pub(crate) fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
                 Some(TurnItem::UserMessage(_) | TurnItem::HookPrompt(_))
             )
         }
-        ResponseItem::Message { role, .. } if role == "assistant" => true,
         ResponseItem::Message { .. } => false,
         ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. } => true,
         ResponseItem::CompactionTrigger => false,
