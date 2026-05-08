@@ -176,10 +176,12 @@ impl MemoryStartupContext {
             Some(Arc::clone(&self.auth_manager)),
             SessionId::from(self.thread_id), // We use thread_id to detach this query from the foreground user session.
             self.thread_id,
+            self.thread_id,
             installation_id,
             config.model_provider.clone(),
             session_source,
             config.model_verbosity,
+            config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
             /*beta_features_header*/ None,
