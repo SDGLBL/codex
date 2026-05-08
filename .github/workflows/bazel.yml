@@ -22,6 +22,7 @@ jobs:
     # signal without putting PR latency back on the critical path. Cargo CI
     # owns V8/code-mode test coverage for now.
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:
