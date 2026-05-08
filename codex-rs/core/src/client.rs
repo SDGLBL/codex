@@ -166,10 +166,10 @@ pub(crate) struct CompactConversationRequestSettings {
 /// configuration is per turn and is passed explicitly to streaming/unary methods.
 #[derive(Debug)]
 struct ModelClientState {
-    session_id: SessionId,
     thread_id: ThreadId,
     window_generation: AtomicU64,
     installation_id: String,
+    wire_session_id: ThreadId,
     provider: SharedModelProvider,
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
@@ -315,8 +315,9 @@ impl ModelClient {
     /// are passed to [`ModelClientSession::stream`] (and other turn-scoped methods) explicitly.
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
-        session_id: SessionId,
+        _session_id: SessionId,
         thread_id: ThreadId,
+        wire_session_id: ThreadId,
         installation_id: String,
         provider_info: ModelProviderInfo,
         session_source: SessionSource,
@@ -336,10 +337,10 @@ impl ModelClient {
         let include_attestation = model_provider.supports_attestation();
         Self {
             state: Arc::new(ModelClientState {
-                session_id,
                 thread_id,
                 window_generation: AtomicU64::new(0),
                 installation_id,
+                wire_session_id,
                 provider: model_provider,
                 auth_env_telemetry,
                 session_source,
@@ -501,7 +502,7 @@ impl ModelClient {
         ));
         extra_headers.extend(self.build_responses_identity_headers());
         extra_headers.extend(build_session_headers(
-            Some(self.state.session_id.to_string()),
+            Some(self.state.wire_session_id.to_string()),
             Some(self.state.thread_id.to_string()),
         ));
         if let Some(header_value) = self.generate_attestation_header_for().await {
@@ -901,7 +902,7 @@ impl ModelClient {
         turn_metadata_header: Option<&str>,
     ) -> ApiHeaderMap {
         let turn_metadata_header = parse_turn_metadata_header(turn_metadata_header);
-        let session_id = self.state.session_id.to_string();
+        let session_id = self.state.wire_session_id.to_string();
         let thread_id = self.state.thread_id.to_string();
         let mut headers = build_responses_headers(
             self.state.beta_features_header.as_deref(),
@@ -971,7 +972,7 @@ impl ModelClientSession {
         compression: Compression,
     ) -> ApiResponsesOptions {
         let turn_metadata_header = parse_turn_metadata_header(turn_metadata_header);
-        let session_id = self.client.state.session_id.to_string();
+        let session_id = self.client.state.wire_session_id.to_string();
         let thread_id = self.client.state.thread_id.to_string();
         ApiResponsesOptions {
             session_id: Some(session_id),
