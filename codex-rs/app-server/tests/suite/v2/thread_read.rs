@@ -1117,6 +1117,7 @@ async fn seed_pathless_store_thread(
     store
         .create_thread(CreateThreadParams {
             thread_id,
+            wire_session_id: thread_id,
             forked_from_id: None,
             source: ProtocolSessionSource::Cli,
             thread_source: None,

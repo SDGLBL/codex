@@ -356,6 +356,7 @@ mod tests {
         store
             .create_thread(CreateThreadParams {
                 thread_id: ThreadId::new(),
+                wire_session_id: ThreadId::new(),
                 forked_from_id: None,
                 source: SessionSource::Exec,
                 thread_source: None,
