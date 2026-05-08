@@ -82,6 +82,7 @@ pub struct RolloutRecorder {
 pub enum RolloutRecorderParams {
     Create {
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: SessionSource,
@@ -159,6 +160,7 @@ fn clone_io_error(err: &IoError) -> IoError {
 impl RolloutRecorderParams {
     pub fn new(
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: SessionSource,
@@ -168,6 +170,7 @@ impl RolloutRecorderParams {
     ) -> Self {
         Self::Create {
             conversation_id,
+            wire_session_id,
             forked_from_id,
             parent_thread_id,
             source,
@@ -672,6 +675,7 @@ impl RolloutRecorder {
         let (file, deferred_log_file_info, rollout_path, meta) = match params {
             RolloutRecorderParams::Create {
                 conversation_id,
+                wire_session_id,
                 forked_from_id,
                 parent_thread_id,
                 source,
@@ -695,6 +699,7 @@ impl RolloutRecorder {
 
                 let session_meta = SessionMeta {
                     id: session_id,
+                    wire_session_id: Some(wire_session_id),
                     forked_from_id,
                     parent_thread_id,
                     timestamp,

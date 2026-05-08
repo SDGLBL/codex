@@ -97,7 +97,6 @@ fn assert_request_trace_matches(body: &serde_json::Value, expected_trace: &W3cTr
 struct WebsocketTestHarness {
     _codex_home: TempDir,
     client: ModelClient,
-    session_id: SessionId,
     thread_id: ThreadId,
     model_info: ModelInfo,
     effort: Option<ReasoningEffortConfig>,
@@ -140,7 +139,7 @@ async fn responses_websocket_streams_request() {
     );
     assert_eq!(
         handshake.header("session-id"),
-        Some(harness.session_id.to_string())
+        Some(harness.thread_id.to_string())
     );
     assert_eq!(
         handshake.header("thread-id"),
@@ -2072,6 +2071,7 @@ async fn websocket_harness_with_provider_options(
         /*auth_manager*/ None,
         session_id,
         thread_id,
+        thread_id,
         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
         provider.clone(),
         SessionSource::Exec,
@@ -2086,7 +2086,6 @@ async fn websocket_harness_with_provider_options(
     WebsocketTestHarness {
         _codex_home: codex_home,
         client,
-        session_id,
         thread_id,
         model_info,
         effort,

@@ -489,6 +489,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     parent_thread_id: None,
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
@@ -620,6 +621,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
                     id: ThreadId::default(),
+                    wire_session_id: Some(ThreadId::default()),
                     parent_thread_id: None,
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
@@ -901,6 +903,7 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
             "unused-api-key",
         ))),
         thread_id.into(),
+        thread_id,
         thread_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
@@ -2413,6 +2416,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     let client = ModelClient::new(
         /*auth_manager*/ None,
         thread_id.into(),
+        thread_id,
         thread_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider.clone(),
