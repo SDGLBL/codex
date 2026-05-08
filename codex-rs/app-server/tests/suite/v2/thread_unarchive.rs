@@ -209,6 +209,7 @@ async fn thread_unarchive_preserves_pathless_store_metadata() -> Result<()> {
     store
         .create_thread(CreateThreadParams {
             thread_id,
+            wire_session_id: thread_id,
             forked_from_id: Some(parent_thread_id),
             source: SessionSource::Cli,
             thread_source: None,
