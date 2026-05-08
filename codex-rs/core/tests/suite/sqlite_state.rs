@@ -4,12 +4,12 @@ use codex_config::types::McpServerTransportConfig;
 use codex_features::Feature;
 use codex_protocol::ThreadId;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -26,6 +26,7 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
 use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -47,7 +48,7 @@ async fn new_thread_is_recorded_in_state_db() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let thread_id = test.session_configured.session_id;
+    let thread_id = test.session_configured.thread_id;
     let rollout_path = test.codex.rollout_path().expect("rollout path");
     let db_path = codex_state::state_db_path(test.config.sqlite_home.as_path());
 
@@ -144,6 +145,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
                     originator: "test".to_string(),
                     cli_version: "test".to_string(),
                     source: SessionSource::default(),
+                    thread_source: None,
                     agent_path: None,
                     agent_nickname: None,
                     agent_role: None,
@@ -261,7 +263,7 @@ async fn user_messages_persist_in_state_db() -> Result<()> {
     test.submit_turn("another message").await?;
 
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let thread_id = test.session_configured.thread_id;
 
     let mut metadata = None;
     for _ in 0..100 {
@@ -304,7 +306,7 @@ async fn web_search_marks_thread_memory_mode_polluted_when_configured() -> Resul
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let thread_id = test.session_configured.thread_id;
 
     test.submit_turn("search the web").await?;
 
@@ -396,7 +398,10 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let thread_id = test.session_configured.thread_id;
+    let cwd = test.cwd_path().to_path_buf();
+    let (sandbox_policy, permission_profile) =
+        turn_permission_fields(PermissionProfile::read_only(), cwd.as_path());
 
     test.codex
         .submit(Op::UserTurn {
@@ -406,10 +411,11 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
-            cwd: test.cwd_path().to_path_buf(),
+            cwd,
             approval_policy: AskForApproval::Never,
             approvals_reviewer: None,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            sandbox_policy,
+            permission_profile,
             model: test.session_configured.model.clone(),
             effort: None,
             summary: None,
@@ -473,7 +479,7 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let expected_thread_id = test.session_configured.session_id.to_string();
+    let expected_thread_id = test.session_configured.thread_id.to_string();
 
     test.submit_turn("run a shell command").await?;
 

@@ -1,5 +1,6 @@
 use super::RemoteThreadStore;
 use super::helpers::proto_session_source;
+use super::helpers::proto_sort_direction;
 use super::helpers::proto_sort_key;
 use super::helpers::remote_status_to_error;
 use super::helpers::stored_thread_from_proto;
@@ -22,6 +23,7 @@ pub(super) async fn list_threads(
             })?,
         cursor: params.cursor,
         sort_key: proto_sort_key(params.sort_key).into(),
+        sort_direction: proto_sort_direction(params.sort_direction).into(),
         allowed_sources: params
             .allowed_sources
             .iter()
@@ -96,6 +98,10 @@ mod tests {
                 proto::ThreadSortKey::try_from(request.sort_key),
                 Ok(proto::ThreadSortKey::UpdatedAt)
             );
+            assert_eq!(
+                proto::SortDirection::try_from(request.sort_direction),
+                Ok(proto::SortDirection::Desc)
+            );
             assert_eq!(request.archived, true);
             assert_eq!(request.search_term.as_deref(), Some("needle"));
             assert!(request.use_state_db_only);
@@ -134,6 +140,7 @@ mod tests {
                         kind: proto::SessionSourceKind::Cli.into(),
                         ..Default::default()
                     }),
+                    thread_source: Some("user".to_string()),
                     git_info: Some(proto::GitInfo {
                         sha: Some("abc123".to_string()),
                         branch: Some("main".to_string()),
@@ -144,6 +151,11 @@ mod tests {
                     agent_path: None,
                     reasoning_effort: Some("medium".to_string()),
                     first_user_message: Some("hello".to_string()),
+                    rollout_path: None,
+                    approval_mode_json: None,
+                    sandbox_policy_json: None,
+                    token_usage_json: None,
+                    history: None,
                 }],
                 next_cursor: Some("cursor-2".to_string()),
             }))
@@ -239,6 +251,7 @@ mod tests {
                 sub_agent_role: Some("explorer".to_string()),
                 ..Default::default()
             }),
+            thread_source: Some("subagent".to_string()),
             git_info: Some(proto::GitInfo {
                 sha: Some("abc123".to_string()),
                 branch: Some("main".to_string()),
@@ -249,12 +262,21 @@ mod tests {
             agent_path: Some("/root/review/backend".to_string()),
             reasoning_effort: Some("high".to_string()),
             first_user_message: Some("first message".to_string()),
+            rollout_path: None,
+            approval_mode_json: None,
+            sandbox_policy_json: None,
+            token_usage_json: None,
+            history: None,
         };
 
         let stored = stored_thread_from_proto(thread.clone()).expect("proto to stored thread");
 
         assert_eq!(stored.rollout_path, None);
         assert!(stored.history.is_none());
-        assert_eq!(stored_thread_to_proto(stored), thread);
+        let roundtripped = stored_thread_to_proto(stored);
+        assert_eq!(roundtripped.thread_id, thread.thread_id);
+        assert_eq!(roundtripped.forked_from_id, thread.forked_from_id);
+        assert_eq!(roundtripped.source, thread.source);
+        assert_eq!(roundtripped.git_info, thread.git_info);
     }
 }

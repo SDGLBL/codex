@@ -56,18 +56,19 @@ pub(crate) struct LegacySessionSecurity {
     pub(crate) cap_sid_str: String,
 }
 
-pub(crate) struct LocalSid {
+/// Owns a SID allocated by `ConvertStringSidToSidW` and releases it with `LocalFree`.
+pub struct LocalSid {
     psid: *mut c_void,
 }
 
 impl LocalSid {
-    pub(crate) fn from_string(sid: &str) -> Result<Self> {
+    pub fn from_string(sid: &str) -> Result<Self> {
         let psid = unsafe { convert_string_sid_to_sid(sid) }
             .ok_or_else(|| anyhow::anyhow!("invalid SID string: {sid}"))?;
         Ok(Self { psid })
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut c_void {
+    pub fn as_ptr(&self) -> *mut c_void {
         self.psid
     }
 }
@@ -294,6 +295,7 @@ pub(crate) fn prepare_elevated_spawn_context(
         env_map,
         codex_home,
         /*read_roots_override*/ None,
+        /*read_roots_include_platform_defaults*/ false,
         write_roots_override,
         &deny_write_paths,
         /*proxy_enforced*/ false,
@@ -349,7 +351,6 @@ mod tests {
         assert!(!should_apply_network_block(
             &SandboxPolicy::WorkspaceWrite {
                 writable_roots: Vec::new(),
-                read_only_access: Default::default(),
                 network_access: true,
                 exclude_tmpdir_env_var: false,
                 exclude_slash_tmp: false,

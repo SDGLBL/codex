@@ -1,8 +1,8 @@
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::WebSearchMode;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
@@ -84,11 +84,12 @@ impl<T> std::ops::DerefMut for ConstrainedWithSource<T> {
 pub struct ConfigRequirements {
     pub approval_policy: ConstrainedWithSource<AskForApproval>,
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
-    pub sandbox_policy: ConstrainedWithSource<SandboxPolicy>,
+    pub permission_profile: ConstrainedWithSource<PermissionProfile>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub managed_hooks: Option<ConstrainedWithSource<ManagedHooksRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
+    pub plugins: Option<Sourced<BTreeMap<String, PluginRequirementsToml>>>,
     pub exec_policy: Option<Sourced<RequirementsExecPolicy>>,
     pub enforce_residency: ConstrainedWithSource<Option<ResidencyRequirement>>,
     /// Managed network constraints derived from requirements.
@@ -110,8 +111,8 @@ impl Default for ConfigRequirements {
                 Constrained::allow_any_from_default(),
                 /*source*/ None,
             ),
-            sandbox_policy: ConstrainedWithSource::new(
-                Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
+            permission_profile: ConstrainedWithSource::new(
+                Constrained::allow_any(PermissionProfile::read_only()),
                 /*source*/ None,
             ),
             web_search_mode: ConstrainedWithSource::new(
@@ -121,6 +122,7 @@ impl Default for ConfigRequirements {
             feature_requirements: None,
             managed_hooks: None,
             mcp_servers: None,
+            plugins: None,
             exec_policy: None,
             enforce_residency: ConstrainedWithSource::new(
                 Constrained::allow_any(/*initial_value*/ None),
@@ -149,6 +151,17 @@ pub enum McpServerIdentity {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct McpServerRequirement {
     pub identity: McpServerIdentity,
+}
+
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginRequirementsToml {
+    pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
+}
+
+impl PluginRequirementsToml {
+    pub fn is_empty(&self) -> bool {
+        self.mcp_servers.as_ref().is_none_or(BTreeMap::is_empty)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
@@ -633,6 +646,7 @@ pub struct ConfigRequirementsToml {
     pub feature_requirements: Option<FeatureRequirementsToml>,
     pub hooks: Option<ManagedHooksRequirementsToml>,
     pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
+    pub plugins: Option<BTreeMap<String, PluginRequirementsToml>>,
     pub apps: Option<AppsRequirementsToml>,
     pub rules: Option<RequirementsExecPolicyToml>,
     pub enforce_residency: Option<ResidencyRequirement>,
@@ -679,6 +693,7 @@ pub struct ConfigRequirementsWithSources {
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub hooks: Option<Sourced<ManagedHooksRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
+    pub plugins: Option<Sourced<BTreeMap<String, PluginRequirementsToml>>>,
     pub apps: Option<Sourced<AppsRequirementsToml>>,
     pub rules: Option<Sourced<RequirementsExecPolicyToml>>,
     pub enforce_residency: Option<Sourced<ResidencyRequirement>>,
@@ -714,6 +729,7 @@ impl ConfigRequirementsWithSources {
             feature_requirements: _,
             hooks: _,
             mcp_servers: _,
+            plugins: _,
             apps: _,
             rules: _,
             enforce_residency: _,
@@ -742,6 +758,7 @@ impl ConfigRequirementsWithSources {
                 feature_requirements,
                 hooks,
                 mcp_servers,
+                plugins,
                 rules,
                 enforce_residency,
                 network,
@@ -768,6 +785,7 @@ impl ConfigRequirementsWithSources {
             feature_requirements,
             hooks,
             mcp_servers,
+            plugins,
             apps,
             rules,
             enforce_residency,
@@ -784,6 +802,7 @@ impl ConfigRequirementsWithSources {
             feature_requirements: feature_requirements.map(|sourced| sourced.value),
             hooks: hooks.map(|sourced| sourced.value),
             mcp_servers: mcp_servers.map(|sourced| sourced.value),
+            plugins: plugins.map(|sourced| sourced.value),
             apps: apps.map(|sourced| sourced.value),
             rules: rules.map(|sourced| sourced.value),
             enforce_residency: enforce_residency.map(|sourced| sourced.value),
@@ -842,10 +861,10 @@ pub enum ResidencyRequirement {
 
 impl ConfigRequirementsToml {
     pub fn apply_remote_sandbox_config(&mut self, hostname: Option<&str>) {
-        let Some(hostname) = hostname.and_then(normalize_hostname) else {
+        let Some(remote_sandbox_config) = self.remote_sandbox_config.as_ref() else {
             return;
         };
-        let Some(remote_sandbox_config) = self.remote_sandbox_config.as_ref() else {
+        let Some(hostname) = hostname.and_then(normalize_hostname) else {
             return;
         };
         let Some(matched_config) = remote_sandbox_config
@@ -873,6 +892,10 @@ impl ConfigRequirementsToml {
                 .is_none_or(ManagedHooksRequirementsToml::is_empty)
             && self.mcp_servers.is_none()
             && self
+                .plugins
+                .as_ref()
+                .is_none_or(|plugins| plugins.values().all(PluginRequirementsToml::is_empty))
+            && self
                 .apps
                 .as_ref()
                 .is_none_or(AppsRequirementsToml::is_empty)
@@ -899,6 +922,7 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             feature_requirements,
             hooks,
             mcp_servers,
+            plugins,
             apps: _apps,
             rules,
             enforce_residency,
@@ -967,15 +991,8 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             ),
         };
 
-        // TODO(gt): `ConfigRequirementsToml` should let the author specify the
-        // default `SandboxPolicy`? Should do this for `AskForApproval` too?
-        //
-        // Currently, we force ReadOnly as the default policy because two of
-        // the other variants (WorkspaceWrite, ExternalSandbox) require
-        // additional parameters. Ultimately, we should expand the config
-        // format to allow specifying those parameters.
-        let default_sandbox_policy = SandboxPolicy::new_read_only_policy();
-        let sandbox_policy = match allowed_sandbox_modes {
+        let default_permission_profile = PermissionProfile::read_only();
+        let permission_profile = match allowed_sandbox_modes {
             Some(Sourced {
                 value: modes,
                 source: requirement_source,
@@ -984,23 +1001,15 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                     return Err(ConstraintError::InvalidValue {
                         field_name: "allowed_sandbox_modes",
                         candidate: format!("{modes:?}"),
-                        allowed: "must include 'read-only' to allow any SandboxPolicy".to_string(),
+                        allowed: "must include 'read-only' to allow any PermissionProfile"
+                            .to_string(),
                         requirement_source,
                     });
                 };
 
                 let requirement_source_for_error = requirement_source.clone();
-                let constrained = Constrained::new(default_sandbox_policy, move |candidate| {
-                    let mode = match candidate {
-                        SandboxPolicy::ReadOnly { .. } => SandboxModeRequirement::ReadOnly,
-                        SandboxPolicy::WorkspaceWrite { .. } => {
-                            SandboxModeRequirement::WorkspaceWrite
-                        }
-                        SandboxPolicy::DangerFullAccess => SandboxModeRequirement::DangerFullAccess,
-                        SandboxPolicy::ExternalSandbox { .. } => {
-                            SandboxModeRequirement::ExternalSandbox
-                        }
-                    };
+                let constrained = Constrained::new(default_permission_profile, move |candidate| {
+                    let mode = sandbox_mode_requirement_for_permission_profile(candidate);
                     if modes.contains(&mode) {
                         Ok(())
                     } else {
@@ -1014,12 +1023,10 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                 })?;
                 ConstrainedWithSource::new(constrained, Some(requirement_source))
             }
-            None => {
-                ConstrainedWithSource::new(
-                    Constrained::allow_any(default_sandbox_policy),
-                    /*source*/ None,
-                )
-            }
+            None => ConstrainedWithSource::new(
+                Constrained::allow_any(default_permission_profile),
+                /*source*/ None,
+            ),
         };
         let exec_policy = match rules {
             Some(Sourced { value, source }) => {
@@ -1145,17 +1152,41 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
         Ok(ConfigRequirements {
             approval_policy,
             approvals_reviewer,
-            sandbox_policy,
+            permission_profile,
             web_search_mode,
             feature_requirements,
             managed_hooks,
             mcp_servers,
+            plugins,
             exec_policy,
             enforce_residency,
             network,
             filesystem,
             guardian_policy_config_source,
         })
+    }
+}
+
+pub fn sandbox_mode_requirement_for_permission_profile(
+    permission_profile: &PermissionProfile,
+) -> SandboxModeRequirement {
+    match permission_profile {
+        PermissionProfile::Disabled => SandboxModeRequirement::DangerFullAccess,
+        PermissionProfile::External { .. } => SandboxModeRequirement::ExternalSandbox,
+        PermissionProfile::Managed { .. } => {
+            let file_system_policy = permission_profile.file_system_sandbox_policy();
+            if file_system_policy.has_full_disk_write_access() {
+                SandboxModeRequirement::DangerFullAccess
+            } else if file_system_policy
+                .entries
+                .iter()
+                .any(|entry| entry.access.can_write())
+            {
+                SandboxModeRequirement::WorkspaceWrite
+            } else {
+                SandboxModeRequirement::ReadOnly
+            }
+        }
     }
 }
 
@@ -1168,6 +1199,7 @@ mod tests {
     use codex_execpolicy::Evaluation;
     use codex_execpolicy::RuleMatch;
     use codex_protocol::protocol::NetworkAccess;
+    use codex_protocol::protocol::SandboxPolicy;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_absolute_path::AbsolutePathBufGuard;
     use pretty_assertions::assert_eq;
@@ -1183,6 +1215,10 @@ mod tests {
         )?)
     }
 
+    fn profile_from_sandbox_policy(sandbox_policy: &SandboxPolicy) -> PermissionProfile {
+        PermissionProfile::from_legacy_sandbox_policy(sandbox_policy)
+    }
+
     fn with_unknown_source(toml: ConfigRequirementsToml) -> ConfigRequirementsWithSources {
         let ConfigRequirementsToml {
             allowed_approval_policies,
@@ -1193,6 +1229,7 @@ mod tests {
             feature_requirements,
             hooks,
             mcp_servers,
+            plugins,
             apps,
             rules,
             enforce_residency,
@@ -1213,6 +1250,7 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             hooks: hooks.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             mcp_servers: mcp_servers.map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            plugins: plugins.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             apps: apps.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             rules: rules.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             enforce_residency: enforce_residency
@@ -1258,6 +1296,7 @@ mod tests {
             feature_requirements: Some(feature_requirements.clone()),
             hooks: None,
             mcp_servers: None,
+            plugins: None,
             apps: None,
             rules: None,
             enforce_residency: Some(enforce_residency),
@@ -1290,6 +1329,7 @@ mod tests {
                 )),
                 hooks: None,
                 mcp_servers: None,
+                plugins: None,
                 apps: None,
                 rules: None,
                 enforce_residency: Some(Sourced::new(enforce_residency, enforce_source)),
@@ -1328,6 +1368,7 @@ mod tests {
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
+                plugins: None,
                 apps: None,
                 rules: None,
                 enforce_residency: None,
@@ -1374,6 +1415,7 @@ mod tests {
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
+                plugins: None,
                 apps: None,
                 rules: None,
                 enforce_residency: None,
@@ -1724,8 +1766,10 @@ allowed_approvals_reviewers = ["user"]
         );
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::DangerFullAccess,
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "DangerFullAccess".into(),
@@ -1803,7 +1847,7 @@ allowed_approvals_reviewers = ["user"]
             Some(source_location.clone())
         );
         assert_eq!(
-            requirements.sandbox_policy.source,
+            requirements.permission_profile.source,
             Some(source_location.clone())
         );
         assert_eq!(
@@ -1869,8 +1913,10 @@ allowed_approvals_reviewers = ["user"]
         );
         assert!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::new_read_only_policy())
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::new_read_only_policy()
+                ))
                 .is_ok()
         );
 
@@ -1952,26 +1998,30 @@ allowed_approvals_reviewers = ["user"]
         let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
         assert!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::new_read_only_policy())
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::new_read_only_policy()
+                ))
                 .is_ok()
         );
+        let workspace_write_policy = SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![AbsolutePathBuf::from_absolute_path(root)?],
+            network_access: false,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        };
         assert!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::WorkspaceWrite {
-                    writable_roots: vec![AbsolutePathBuf::from_absolute_path(root)?],
-                    read_only_access: Default::default(),
-                    network_access: false,
-                    exclude_tmpdir_env_var: false,
-                    exclude_slash_tmp: false,
-                })
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(&workspace_write_policy))
                 .is_ok()
         );
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::DangerFullAccess,
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "DangerFullAccess".into(),
@@ -1981,10 +2031,12 @@ allowed_approvals_reviewers = ["user"]
         );
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::ExternalSandbox {
-                    network_access: NetworkAccess::Restricted,
-                }),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::ExternalSandbox {
+                        network_access: NetworkAccess::Restricted,
+                    }
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "ExternalSandbox".into(),
@@ -2065,22 +2117,24 @@ allowed_approvals_reviewers = ["user"]
 
         let requirements = ConfigRequirements::try_from(requirements_with_sources)?;
         let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
+        let workspace_write_policy = SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![AbsolutePathBuf::from_absolute_path(root)?],
+            network_access: false,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+        };
         assert!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::WorkspaceWrite {
-                    writable_roots: vec![AbsolutePathBuf::from_absolute_path(root)?],
-                    read_only_access: Default::default(),
-                    network_access: false,
-                    exclude_tmpdir_env_var: false,
-                    exclude_slash_tmp: false,
-                })
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(&workspace_write_policy))
                 .is_ok()
         );
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::DangerFullAccess,
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "DangerFullAccess".into(),
@@ -2110,8 +2164,10 @@ allowed_approvals_reviewers = ["user"]
 
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::DangerFullAccess,
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "DangerFullAccess".into(),
@@ -2149,8 +2205,10 @@ allowed_approvals_reviewers = ["user"]
 
         assert_eq!(
             requirements
-                .sandbox_policy
-                .can_set(&SandboxPolicy::new_workspace_write_policy()),
+                .permission_profile
+                .can_set(&profile_from_sandbox_policy(
+                    &SandboxPolicy::new_workspace_write_policy(),
+                )),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: "WorkspaceWrite".into(),
@@ -2664,6 +2722,55 @@ command = "python3 /enterprise/hooks/pre.py"
                             identity: McpServerIdentity::Url {
                                 url: "https://example.com/mcp".to_string(),
                             },
+                        },
+                    ),
+                ]),
+                RequirementSource::Unknown,
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_plugin_mcp_server_requirements() -> Result<()> {
+        let toml_str = r#"
+            [plugins."sample@test".mcp_servers.sample.identity]
+            command = "sample-mcp"
+
+            [plugins."remote@test".mcp_servers.remote.identity]
+            url = "https://example.com/mcp"
+        "#;
+        let requirements: ConfigRequirements =
+            with_unknown_source(from_str(toml_str)?).try_into()?;
+
+        assert_eq!(
+            requirements.plugins,
+            Some(Sourced::new(
+                BTreeMap::from([
+                    (
+                        "remote@test".to_string(),
+                        PluginRequirementsToml {
+                            mcp_servers: Some(BTreeMap::from([(
+                                "remote".to_string(),
+                                McpServerRequirement {
+                                    identity: McpServerIdentity::Url {
+                                        url: "https://example.com/mcp".to_string(),
+                                    },
+                                },
+                            )])),
+                        },
+                    ),
+                    (
+                        "sample@test".to_string(),
+                        PluginRequirementsToml {
+                            mcp_servers: Some(BTreeMap::from([(
+                                "sample".to_string(),
+                                McpServerRequirement {
+                                    identity: McpServerIdentity::Command {
+                                        command: "sample-mcp".to_string(),
+                                    },
+                                },
+                            )])),
                         },
                     ),
                 ]),

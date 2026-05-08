@@ -10,6 +10,8 @@
         "preToolUse",
         "permissionRequest",
         "postToolUse",
+        "preCompact",
+        "postCompact",
         "sessionStart",
         "userPromptSubmit",
         "stop"
@@ -160,6 +162,8 @@
         "project",
         "mdm",
         "sessionFlags",
+        "plugin",
+        "cloudRequirements",
         "legacyManagedConfigFile",
         "legacyManagedConfigMdm",
         "unknown"

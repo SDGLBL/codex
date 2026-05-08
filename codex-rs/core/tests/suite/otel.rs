@@ -1,10 +1,11 @@
 use codex_core::config::Constrained;
 use codex_features::Feature;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::user_input::UserInput;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -563,6 +564,97 @@ async fn process_sse_emits_completed_telemetry() {
     });
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn turn_and_completed_response_spans_record_token_usage() {
+    let buffer: &'static Mutex<Vec<u8>> = Box::leak(Box::new(Mutex::new(Vec::new())));
+    let subscriber = tracing_subscriber::fmt()
+        .with_level(true)
+        .with_ansi(false)
+        .with_max_level(Level::TRACE)
+        .with_span_events(FmtSpan::FULL)
+        .with_writer(MockWriter::new(buffer))
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let server = start_mock_server().await;
+
+    mount_sse_once(
+        &server,
+        sse(vec![serde_json::json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp1",
+                "usage": {
+                    "input_tokens": 3,
+                    "input_tokens_details": { "cached_tokens": 1 },
+                    "output_tokens": 5,
+                    "output_tokens_details": { "reasoning_tokens": 2 },
+                    "total_tokens": 9
+                }
+            }
+        })]),
+    )
+    .await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config.model_reasoning_effort = Some(ReasoningEffort::High);
+            config
+                .features
+                .disable(Feature::GhostCommit)
+                .expect("test config should allow feature update");
+        })
+        .build(&server)
+        .await
+        .unwrap();
+
+    let TestCodex { codex, .. } = test;
+
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await
+        .unwrap();
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+
+    assert!(
+        logs.lines().any(|line| {
+            line.contains("handle_responses{")
+                && line.contains("otel.name=\"completed\"")
+                && line.contains("codex.request.reasoning_effort=high")
+                && line.contains("gen_ai.usage.input_tokens=3")
+                && line.contains("gen_ai.usage.cache_read.input_tokens=1")
+                && line.contains("gen_ai.usage.output_tokens=5")
+                && line.contains("codex.usage.reasoning_output_tokens=2")
+                && line.contains("codex.usage.total_tokens=9")
+        }),
+        "missing completed response span token usage\nlogs:\n{logs}"
+    );
+    assert!(
+        logs.lines().any(|line| {
+            line.contains("turn{otel.name=\"session_task.turn\"")
+                && line.contains("codex.turn.reasoning_effort=high")
+                && line.contains("codex.turn.token_usage.input_tokens=3")
+                && line.contains("codex.turn.token_usage.cached_input_tokens=1")
+                && line.contains("codex.turn.token_usage.non_cached_input_tokens=2")
+                && line.contains("codex.turn.token_usage.output_tokens=5")
+                && line.contains("codex.turn.token_usage.reasoning_output_tokens=2")
+                && line.contains("codex.turn.token_usage.total_tokens=9")
+        }),
+        "missing regular turn span token usage\nlogs:\n{logs}"
+    );
+}
+
 #[tokio::test]
 async fn handle_responses_span_records_response_kind_and_tool_name() {
     let buffer: &'static Mutex<Vec<u8>> = Box::leak(Box::new(Mutex::new(Vec::new())));
@@ -623,13 +715,18 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
     let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
 
     assert!(
-        logs.contains("handle_responses{otel.name=\"function_call\"")
-            && logs.contains("tool_name=\"nonexistent\"")
-            && logs.contains("from=\"output_item_done\""),
+        logs.lines().any(|line| {
+            line.contains("handle_responses{")
+                && line.contains("otel.name=\"function_call\"")
+                && line.contains("tool_name=\"nonexistent\"")
+                && line.contains("from=\"output_item_done\"")
+        }),
         "missing handle_responses span with function call metadata\nlogs:\n{logs}"
     );
     assert!(
-        logs.contains("handle_responses{otel.name=\"completed\""),
+        logs.lines().any(|line| {
+            line.contains("handle_responses{") && line.contains("otel.name=\"completed\"")
+        }),
         "missing handle_responses span for completion\nlogs:\n{logs}"
     );
 }
@@ -681,7 +778,9 @@ async fn record_responses_sets_span_fields_for_response_events() {
     .await;
 
     let TestCodex { codex, .. } = test_codex()
+        .with_model("gpt-5.4")
         .with_config(|config| {
+            config.model_reasoning_effort = Some(ReasoningEffort::High);
             config
                 .features
                 .disable(Feature::GhostCommit)
@@ -721,22 +820,24 @@ async fn record_responses_sets_span_fields_for_response_events() {
     ];
 
     for (name, from, tool_name) in expected {
+        let otel_name = format!("otel.name=\"{name}\"");
+        let from_field = from.map(|from| format!("from=\"{from}\""));
+        let tool_name_field = tool_name.map(|tool_name| format!("tool_name=\"{tool_name}\""));
+
         assert!(
-            logs.contains(&format!("handle_responses{{otel.name=\"{name}\"")),
-            "missing otel.name={name}\nlogs:\n{logs}"
+            logs.lines().any(|line| {
+                line.contains("handle_responses{")
+                    && line.contains(&otel_name)
+                    && line.contains("codex.request.reasoning_effort=high")
+                    && from_field
+                        .as_ref()
+                        .is_none_or(|from_field| line.contains(from_field))
+                    && tool_name_field
+                        .as_ref()
+                        .is_none_or(|tool_name_field| line.contains(tool_name_field))
+            }),
+            "missing span fields for {name}\nlogs:\n{logs}"
         );
-        if let Some(from) = from {
-            assert!(
-                logs.contains(&format!("from=\"{from}\"")),
-                "missing from={from} for {name}\nlogs:\n{logs}"
-            );
-        }
-        if let Some(tool_name) = tool_name {
-            assert!(
-                logs.contains(&format!("tool_name=\"{tool_name}\"")),
-                "missing tool_name={tool_name} for {name}\nlogs:\n{logs}"
-            );
-        }
     }
 }
 
@@ -1110,8 +1211,10 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
     let TestCodex { codex, .. } = test_codex()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
-            config.permissions.sandbox_policy =
-                Constrained::allow_any(SandboxPolicy::DangerFullAccess);
+            config
+                .permissions
+                .set_permission_profile(PermissionProfile::Disabled)
+                .expect("set permission profile");
         })
         .build(&server)
         .await
@@ -1146,7 +1249,11 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("user_approved_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "user_approved_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )
@@ -1215,7 +1322,11 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("user_approved_session_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "user_approved_session_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )
@@ -1283,7 +1394,11 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("sandbox_retry_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "sandbox_retry_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )
@@ -1351,7 +1466,11 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("user_denied_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "user_denied_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )
@@ -1419,7 +1538,11 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("sandbox_session_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "sandbox_session_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )
@@ -1487,7 +1610,11 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
     mount_sse_once(
         &server,
         sse(vec![
-            ev_local_shell_call("sandbox_deny_call", "completed", vec!["/bin/date"]),
+            ev_local_shell_call(
+                "sandbox_deny_call",
+                "completed",
+                vec!["/usr/bin/touch", "codex-otel-approval-test"],
+            ),
             ev_completed("done"),
         ]),
     )

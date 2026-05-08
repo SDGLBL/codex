@@ -68,7 +68,7 @@ pub async fn run_codex_tool_session(
         thread_id,
         thread,
         session_configured,
-    } = match thread_manager.start_thread(config).await {
+    } = match thread_manager.start_thread(config.clone()).await {
         Ok(res) => res,
         Err(e) => {
             let result = CallToolResult {
@@ -318,14 +318,8 @@ async fn run_codex_tool_session_inner(
                     EventMsg::SessionConfigured(_) => {
                         tracing::error!("unexpected SessionConfigured event");
                     }
-                    EventMsg::ThreadNameUpdated(_) => {
-                        // Ignore session metadata updates in MCP tool runner.
-                    }
-                    EventMsg::AgentMessageDelta(_) => {
-                        // TODO: think how we want to support this in the MCP
-                    }
-                    EventMsg::AgentReasoningDelta(_) => {
-                        // TODO: think how we want to support this in the MCP
+                    EventMsg::ThreadGoalUpdated(_) => {
+                        // Ignore thread goal metadata updates in MCP tool runner.
                     }
                     EventMsg::McpStartupUpdate(_) | EventMsg::McpStartupComplete(_) => {
                         // Ignored in MCP tool runner.
@@ -334,21 +328,17 @@ async fn run_codex_tool_session_inner(
                         // TODO: think how we want to support this in the MCP
                     }
                     EventMsg::AgentReasoningRawContent(_)
-                    | EventMsg::AgentReasoningRawContentDelta(_)
                     | EventMsg::TurnStarted(_)
                     | EventMsg::TokenCount(_)
                     | EventMsg::AgentReasoning(_)
                     | EventMsg::AgentReasoningSectionBreak(_)
                     | EventMsg::McpToolCallBegin(_)
                     | EventMsg::McpToolCallEnd(_)
-                    | EventMsg::McpListToolsResponse(_)
-                    | EventMsg::ListSkillsResponse(_)
                     | EventMsg::RealtimeConversationListVoicesResponse(_)
                     | EventMsg::ExecCommandBegin(_)
                     | EventMsg::TerminalInteraction(_)
                     | EventMsg::ExecCommandOutputDelta(_)
                     | EventMsg::ExecCommandEnd(_)
-                    | EventMsg::BackgroundEvent(_)
                     | EventMsg::StreamError(_)
                     | EventMsg::PatchApplyBegin(_)
                     | EventMsg::PatchApplyUpdated(_)
@@ -356,14 +346,13 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::TurnDiff(_)
                     | EventMsg::WebSearchBegin(_)
                     | EventMsg::WebSearchEnd(_)
-                    | EventMsg::GetHistoryEntryResponse(_)
                     | EventMsg::PlanUpdate(_)
                     | EventMsg::TurnAborted(_)
                     | EventMsg::UserMessage(_)
                     | EventMsg::ShutdownComplete
-                    | EventMsg::ViewImageToolCall(_)
                     | EventMsg::ImageGenerationBegin(_)
                     | EventMsg::ImageGenerationEnd(_)
+                    | EventMsg::ViewImageToolCall(_)
                     | EventMsg::RawResponseItem(_)
                     | EventMsg::EnteredReviewMode(_)
                     | EventMsg::ItemStarted(_)
@@ -374,8 +363,6 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::ReasoningContentDelta(_)
                     | EventMsg::ReasoningRawContentDelta(_)
                     | EventMsg::SkillsUpdateAvailable
-                    | EventMsg::UndoStarted(_)
-                    | EventMsg::UndoCompleted(_)
                     | EventMsg::ExitedReviewMode(_)
                     | EventMsg::RequestUserInput(_)
                     | EventMsg::RequestPermissions(_)

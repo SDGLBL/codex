@@ -16,6 +16,7 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::Submission;
+use codex_protocol::protocol::ThreadSource;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
@@ -48,7 +49,7 @@ use crate::session::emit_subagent_session_started;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use codex_login::AuthManager;
-use codex_models_manager::manager::ModelsManager;
+use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::InitialHistory;
 
@@ -64,7 +65,7 @@ use crate::session::completed_session_loop_termination;
 pub(crate) async fn run_codex_thread_interactive(
     config: Config,
     auth_manager: Arc<AuthManager>,
-    models_manager: Arc<ModelsManager>,
+    models_manager: SharedModelsManager,
     parent_session: Arc<Session>,
     parent_ctx: Arc<TurnContext>,
     cancel_token: CancellationToken,
@@ -73,9 +74,9 @@ pub(crate) async fn run_codex_thread_interactive(
 ) -> Result<Codex, CodexErr> {
     let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
-
     let CodexSpawnOk { codex, .. } = Box::pin(Codex::spawn(CodexSpawnArgs {
         config,
+        installation_id: parent_session.installation_id.clone(),
         auth_manager,
         models_manager,
         environment_manager: Arc::clone(&parent_session.services.environment_manager),
@@ -85,6 +86,7 @@ pub(crate) async fn run_codex_thread_interactive(
         skills_watcher: Arc::clone(&parent_session.services.skills_watcher),
         conversation_history: initial_history.unwrap_or(InitialHistory::New),
         session_source: SessionSource::SubAgent(subagent_source.clone()),
+        thread_source: Some(ThreadSource::Subagent),
         agent_control: parent_session.services.agent_control.clone(),
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
@@ -92,23 +94,24 @@ pub(crate) async fn run_codex_thread_interactive(
         inherited_shell_snapshot: None,
         user_shell_override: None,
         inherited_exec_policy: Some(Arc::clone(&parent_session.services.exec_policy)),
-        inherited_rollout_trace: codex_rollout_trace::RolloutTraceRecorder::disabled(),
+        parent_rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         parent_trace: None,
+        environment_selections: parent_ctx.environments.clone(),
         analytics_events_client: Some(parent_session.services.analytics_events_client.clone()),
+        thread_store: Arc::clone(&parent_session.services.thread_store),
     }))
-    .await?;
-    if parent_session.enabled(codex_features::Feature::GeneralAnalytics) {
-        let thread_config = codex.thread_config_snapshot().await;
-        let client_metadata = parent_session.app_server_client_metadata().await;
-        emit_subagent_session_started(
-            &parent_session.services.analytics_events_client,
-            client_metadata,
-            codex.session.conversation_id,
-            Some(parent_session.conversation_id),
-            thread_config,
-            subagent_source,
-        );
-    }
+    .or_cancel(&cancel_token)
+    .await??;
+    let thread_config = codex.thread_config_snapshot().await;
+    let client_metadata = parent_session.app_server_client_metadata().await;
+    emit_subagent_session_started(
+        &parent_session.services.analytics_events_client,
+        client_metadata,
+        codex.session.conversation_id,
+        Some(parent_session.conversation_id),
+        thread_config,
+        subagent_source,
+    );
     let codex = Arc::new(codex);
 
     // Use a child token so parent cancel cascades but we can scope it to this task
@@ -158,7 +161,7 @@ pub(crate) async fn run_codex_thread_interactive(
 pub(crate) async fn run_codex_thread_one_shot(
     config: Config,
     auth_manager: Arc<AuthManager>,
-    models_manager: Arc<ModelsManager>,
+    models_manager: SharedModelsManager,
     input: Vec<UserInput>,
     parent_session: Arc<Session>,
     parent_ctx: Arc<TurnContext>,
@@ -257,11 +260,6 @@ async fn forward_events(
                     Err(_) => break,
                 };
                 match event {
-                    // ignore all legacy delta events
-                    Event {
-                        id: _,
-                        msg: EventMsg::AgentMessageDelta(_) | EventMsg::AgentReasoningDelta(_),
-                    } => {}
                     Event {
                         id: _,
                         msg: EventMsg::TokenCount(_),
@@ -269,10 +267,6 @@ async fn forward_events(
                     Event {
                         id: _,
                         msg: EventMsg::SessionConfigured(_),
-                    } => {}
-                    Event {
-                        id: _,
-                        msg: EventMsg::ThreadNameUpdated(_),
                     } => {}
                     Event {
                         id,

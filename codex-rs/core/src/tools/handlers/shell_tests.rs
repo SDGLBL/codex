@@ -13,10 +13,11 @@ use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
+use crate::tools::handlers::LocalShellHandler;
 use crate::tools::handlers::ShellCommandHandler;
-use crate::tools::handlers::ShellHandler;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::ToolHandler;
 use crate::turn_diff_tracker::TurnDiffTracker;
@@ -203,7 +204,7 @@ fn shell_command_handler_rejects_login_when_disallowed() {
 }
 
 #[tokio::test]
-async fn shell_pre_tool_use_payload_uses_joined_command() {
+async fn local_shell_pre_tool_use_payload_uses_joined_command() {
     let payload = ToolPayload::LocalShell {
         params: codex_protocol::models::ShellToolCallParams {
             command: vec![
@@ -214,13 +215,13 @@ async fn shell_pre_tool_use_payload_uses_joined_command() {
             workdir: None,
             timeout_ms: None,
             sandbox_permissions: None,
-            prefix_rule: None,
             additional_permissions: None,
+            prefix_rule: None,
             justification: None,
         },
     };
     let (session, turn) = make_session_and_context().await;
-    let handler = ShellHandler;
+    let handler = LocalShellHandler;
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
@@ -229,7 +230,8 @@ async fn shell_pre_tool_use_payload_uses_joined_command() {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-41".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell"),
+            tool_name: codex_tools::ToolName::plain("local_shell"),
+            source: crate::tools::context::ToolCallSource::Direct,
             payload,
         }),
         Some(crate::tools::registry::PreToolUsePayload {
@@ -245,9 +247,7 @@ async fn shell_command_pre_tool_use_payload_uses_raw_command() {
         arguments: json!({ "command": "printf shell command" }).to_string(),
     };
     let (session, turn) = make_session_and_context().await;
-    let handler = ShellCommandHandler {
-        backend: super::ShellCommandBackend::Classic,
-    };
+    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
@@ -257,6 +257,7 @@ async fn shell_command_pre_tool_use_payload_uses_raw_command() {
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-42".to_string(),
             tool_name: codex_tools::ToolName::plain("shell_command"),
+            source: crate::tools::context::ToolCallSource::Direct,
             payload,
         }),
         Some(crate::tools::registry::PreToolUsePayload {
@@ -276,9 +277,7 @@ async fn build_post_tool_use_payload_uses_tool_output_wire_value() {
         success: Some(true),
         post_tool_use_response: Some(json!("shell output")),
     };
-    let handler = ShellCommandHandler {
-        backend: super::ShellCommandBackend::Classic,
-    };
+    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
     let (session, turn) = make_session_and_context().await;
     let invocation = ToolInvocation {
         session: session.into(),
@@ -287,6 +286,7 @@ async fn build_post_tool_use_payload_uses_tool_output_wire_value() {
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-42".to_string(),
         tool_name: codex_tools::ToolName::plain("shell_command"),
+        source: ToolCallSource::Direct,
         payload,
     };
     assert_eq!(

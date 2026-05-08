@@ -4,17 +4,20 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::function_tool::FunctionCallError;
+use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::run_post_tool_use_hooks;
 use crate::hook_runtime::run_pre_tool_use_hooks;
-use crate::memories::usage::emit_metric_for_tool_read;
-use crate::sandbox_tags::sandbox_tag;
+use crate::memory_usage::emit_metric_for_tool_read;
+use crate::sandbox_tags::permission_profile_policy_tag;
+use crate::sandbox_tags::permission_profile_sandbox_tag;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::hook_names::HookToolName;
+use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterToolUse;
 use codex_hooks::HookPayload;
@@ -24,7 +27,6 @@ use codex_hooks::HookToolInputLocalShell;
 use codex_hooks::HookToolKind;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_tools::ConfiguredToolSpec;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
@@ -41,6 +43,9 @@ pub enum ToolKind {
 
 pub trait ToolHandler: Send + Sync {
     type Output: ToolOutput + 'static;
+
+    /// The concrete tool name handled by this handler instance.
+    fn tool_name(&self) -> ToolName;
 
     fn kind(&self) -> ToolKind;
 
@@ -96,9 +101,9 @@ pub(crate) trait ToolArgumentDiffConsumer: Send {
     fn consume_diff(&mut self, turn: &TurnContext, call_id: String, diff: &str)
     -> Option<EventMsg>;
 
-    /// Flush any buffered event before the tool call completes.
-    fn flush_on_complete(&mut self) -> Option<EventMsg> {
-        None
+    /// Finish consuming argument diffs before the tool call completes.
+    fn finish(&mut self) -> Result<Option<EventMsg>, FunctionCallError> {
+        Ok(None)
     }
 }
 
@@ -219,6 +224,20 @@ impl ToolRegistry {
         Self { handlers }
     }
 
+    #[cfg(test)]
+    pub(crate) fn empty_for_test() -> Self {
+        Self::new(HashMap::new())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_handler_for_test<T>(handler: Arc<T>) -> Self
+    where
+        T: ToolHandler + 'static,
+    {
+        let name = handler.tool_name();
+        Self::new(HashMap::from([(name, handler as Arc<dyn AnyToolHandler>)]))
+    }
+
     fn handler(&self, name: &ToolName) -> Option<Arc<dyn AnyToolHandler>> {
         self.handlers.get(name).map(Arc::clone)
     }
@@ -234,14 +253,6 @@ impl ToolRegistry {
     ) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         self.handler(name)?.create_diff_consumer()
     }
-
-    // TODO(jif) for dynamic tools.
-    // pub fn register(&mut self, name: impl Into<String>, handler: Arc<dyn ToolHandler>) {
-    //     let name = name.into();
-    //     if self.handlers.insert(name.clone(), handler).is_some() {
-    //         warn!("overwriting handler for tool {name}");
-    //     }
-    // }
 
     #[expect(
         clippy::await_holding_invalid_type,
@@ -260,14 +271,18 @@ impl ToolRegistry {
         let metric_tags = [
             (
                 "sandbox",
-                sandbox_tag(
-                    &invocation.turn.sandbox_policy,
+                permission_profile_sandbox_tag(
+                    &invocation.turn.permission_profile,
                     invocation.turn.windows_sandbox_level,
+                    invocation.turn.network.is_some(),
                 ),
             ),
             (
                 "sandbox_policy",
-                sandbox_policy_tag(&invocation.turn.sandbox_policy),
+                permission_profile_policy_tag(
+                    &invocation.turn.permission_profile,
+                    invocation.turn.cwd.as_path(),
+                ),
             ),
         ];
         let (mcp_server, mcp_server_origin) = match &invocation.payload {
@@ -294,6 +309,8 @@ impl ToolRegistry {
             }
         }
 
+        let dispatch_trace = ToolDispatchTrace::start(&invocation);
+
         let handler = match self.handler(&tool_name) {
             Some(handler) => handler,
             None => {
@@ -309,7 +326,9 @@ impl ToolRegistry {
                     mcp_server_ref,
                     mcp_server_origin_ref,
                 );
-                return Err(FunctionCallError::RespondToModel(message));
+                let err = FunctionCallError::RespondToModel(message);
+                dispatch_trace.record_failed(&err);
+                return Err(err);
             }
         };
 
@@ -326,7 +345,9 @@ impl ToolRegistry {
                 mcp_server_ref,
                 mcp_server_origin_ref,
             );
-            return Err(FunctionCallError::Fatal(message));
+            let err = FunctionCallError::Fatal(message);
+            dispatch_trace.record_failed(&err);
+            return Err(err);
         }
 
         if let Some(pre_tool_use_payload) = handler.pre_tool_use_payload(&invocation)
@@ -339,7 +360,9 @@ impl ToolRegistry {
             )
             .await
         {
-            return Err(FunctionCallError::RespondToModel(message));
+            let err = FunctionCallError::RespondToModel(message);
+            dispatch_trace.record_failed(&err);
+            return Err(err);
         }
 
         let is_mutating = handler.is_mutating(&invocation).await;
@@ -420,6 +443,7 @@ impl ToolRegistry {
         .await;
 
         if let Some(err) = hook_abort_error {
+            dispatch_trace.record_failed(&err);
             return Err(err);
         }
 
@@ -430,7 +454,6 @@ impl ToolRegistry {
                 outcome.additional_contexts.clone(),
             )
             .await;
-
             let replacement_text = if outcome.should_stop {
                 Some(
                     outcome
@@ -453,15 +476,35 @@ impl ToolRegistry {
             }
         }
 
+        if let Err(err) = invocation
+            .session
+            .goal_runtime_apply(GoalRuntimeEvent::ToolCompleted {
+                turn_context: invocation.turn.as_ref(),
+                tool_name: tool_name.name.as_str(),
+            })
+            .await
+        {
+            warn!("failed to account thread goal progress after tool call: {err}");
+        }
+
         match result {
             Ok(_) => {
                 let mut guard = response_cell.lock().await;
                 let result = guard.take().ok_or_else(|| {
                     FunctionCallError::Fatal("tool produced no output".to_string())
                 })?;
+                dispatch_trace.record_completed(
+                    &invocation,
+                    &result.call_id,
+                    &result.payload,
+                    result.result.as_ref(),
+                );
                 Ok(result)
             }
-            Err(err) => Err(err),
+            Err(err) => {
+                dispatch_trace.record_failed(&err);
+                Err(err)
+            }
         }
     }
 }
@@ -479,10 +522,6 @@ impl ToolRegistryBuilder {
         }
     }
 
-    pub fn push_spec(&mut self, spec: ToolSpec) {
-        self.push_spec_with_parallel_support(spec, /*supports_parallel_tool_calls*/ false);
-    }
-
     pub fn push_spec_with_parallel_support(
         &mut self,
         spec: ToolSpec,
@@ -492,11 +531,25 @@ impl ToolRegistryBuilder {
             .push(ConfiguredToolSpec::new(spec, supports_parallel_tool_calls));
     }
 
-    pub fn register_handler<H>(&mut self, name: impl Into<ToolName>, handler: Arc<H>)
+    pub(crate) fn push_spec(
+        &mut self,
+        spec: ToolSpec,
+        supports_parallel_tool_calls: bool,
+        code_mode_enabled: bool,
+    ) {
+        let spec = if code_mode_enabled {
+            codex_tools::augment_tool_spec_for_code_mode(spec)
+        } else {
+            spec
+        };
+        self.push_spec_with_parallel_support(spec, supports_parallel_tool_calls);
+    }
+
+    pub fn register_handler<H>(&mut self, handler: Arc<H>)
     where
         H: ToolHandler + 'static,
     {
-        let name = name.into();
+        let name = handler.tool_name();
         let display_name = name.display();
         let handler: Arc<dyn AnyToolHandler> = handler;
         if self.handlers.insert(name, handler).is_some() {
@@ -504,23 +557,9 @@ impl ToolRegistryBuilder {
         }
     }
 
-    // TODO(jif) for dynamic tools.
-    // pub fn register_many<I>(&mut self, names: I, handler: Arc<dyn ToolHandler>)
-    // where
-    //     I: IntoIterator,
-    //     I::Item: Into<String>,
-    // {
-    //     for name in names {
-    //         let name = name.into();
-    //         if self
-    //             .handlers
-    //             .insert(name.clone(), handler.clone())
-    //             .is_some()
-    //         {
-    //             warn!("overwriting handler for tool {name}");
-    //         }
-    //     }
-    // }
+    pub(crate) fn specs(&self) -> &[ConfiguredToolSpec] {
+        &self.specs
+    }
 
     pub fn build(self) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
         let registry = ToolRegistry::new(self.handlers);
@@ -533,15 +572,6 @@ fn unsupported_tool_call_message(payload: &ToolPayload, tool_name: &ToolName) ->
     match payload {
         ToolPayload::Custom { .. } => format!("unsupported custom tool call: {tool_name}"),
         _ => format!("unsupported call: {tool_name}"),
-    }
-}
-
-fn sandbox_policy_tag(policy: &SandboxPolicy) -> &'static str {
-    match policy {
-        SandboxPolicy::ReadOnly { .. } => "read-only",
-        SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-        SandboxPolicy::DangerFullAccess => "danger-full-access",
-        SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
     }
 }
 
@@ -629,9 +659,17 @@ async fn dispatch_after_tool_use_hook(
                     success: dispatch.success,
                     duration_ms: u64::try_from(dispatch.duration.as_millis()).unwrap_or(u64::MAX),
                     mutating: dispatch.mutating,
-                    sandbox: sandbox_tag(&turn.sandbox_policy, turn.windows_sandbox_level)
-                        .to_string(),
-                    sandbox_policy: sandbox_policy_tag(&turn.sandbox_policy).to_string(),
+                    sandbox: permission_profile_sandbox_tag(
+                        &turn.permission_profile,
+                        turn.windows_sandbox_level,
+                        turn.network.is_some(),
+                    )
+                    .to_string(),
+                    sandbox_policy: permission_profile_policy_tag(
+                        &turn.permission_profile,
+                        turn.cwd.as_path(),
+                    )
+                    .to_string(),
                     output_preview: dispatch.output_preview.clone(),
                 },
             },

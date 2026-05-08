@@ -3,12 +3,15 @@ use http::HeaderMap;
 use http::HeaderValue;
 use serde_json::json;
 
-pub fn build_conversation_headers(conversation_id: Option<String>) -> HeaderMap {
+pub fn build_session_headers(session_id: Option<String>, thread_id: Option<String>) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    if let Some(id) = conversation_id {
+    if let Some(id) = session_id {
         insert_header(&mut headers, "session_id", &id);
         let extra_value = json!({ "session_id": id }).to_string();
         insert_header(&mut headers, "extra", &extra_value);
+    }
+    if let Some(id) = thread_id {
+        insert_header(&mut headers, "thread_id", &id);
     }
     headers
 }

@@ -29,6 +29,7 @@ async fn build_prompt_input_includes_context_and_user_message() -> Result<()> {
             text: "hello from debug prompt".to_string(),
             text_elements: Vec::new(),
         }],
+        /*state_db*/ None,
     )
     .await?;
 
@@ -38,7 +39,6 @@ async fn build_prompt_input_includes_context_and_user_message() -> Result<()> {
         content: vec![ContentItem::InputText {
             text: "hello from debug prompt".to_string(),
         }],
-        end_turn: None,
         phase: None,
     };
     assert_eq!(input.last(), Some(&expected_user_message));

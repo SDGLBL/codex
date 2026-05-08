@@ -1,10 +1,6 @@
 name: internal-rust-release
 
 on:
-  push:
-    tags:
-      - "internal-rust-v*.*.*"
-      - "rehearsal-internal-rust-v*"
   workflow_dispatch:
     inputs:
       upstream_tag:
@@ -12,9 +8,8 @@ on:
         required: true
         type: string
       release_ref:
-        description: Branch or tag to build from; defaults to main
-        required: false
-        default: main
+        description: Branch or tag to build from, for example candidate/queue/rust-v0.124.0
+        required: true
         type: string
       internal_tag:
         description: Optional internal tag name to publish against
@@ -22,9 +17,9 @@ on:
         default: ""
         type: string
       publish:
-        description: Publish a real GitHub Release instead of a dry-run bundle
+        description: Publish a real GitHub Release instead of a dry-run bundle artifact
         required: false
-        default: false
+        default: true
         type: boolean
 
 permissions:
@@ -50,49 +45,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          parse_tag() {
-            local value="$1"
-            if [[ "${value}" =~ ^internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-              TAG_REHEARSAL=""
-              TAG_UPSTREAM="${BASH_REMATCH[1]}"
-              return 0
-            fi
-
-            if [[ "${value}" =~ ^rehearsal-internal-(rust-v[0-9]+\.[0-9]+\.[0-9]+)-(.+)$ ]]; then
-              TAG_REHEARSAL="rehearsal-"
-              TAG_UPSTREAM="${BASH_REMATCH[1]}"
-              return 0
-            fi
-            return 1
-          }
-
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
-            release_ref="${GITHUB_REF_NAME}"
-            internal_tag="${GITHUB_REF_NAME}"
-            parse_tag "${internal_tag}" || {
-              echo "unexpected internal tag format: ${internal_tag}" >&2
-              exit 1
-            }
-            upstream_tag="${TAG_UPSTREAM}"
-            if [[ -n "${TAG_REHEARSAL}" ]]; then
-              publish=false
-            else
-              publish=true
-            fi
-          else
-            upstream_tag="${INPUT_UPSTREAM_TAG}"
-            release_ref="${INPUT_RELEASE_REF:-main}"
-            internal_tag="${INPUT_INTERNAL_TAG:-}"
-            if [[ -z "${internal_tag}" ]]; then
-              internal_tag="internal-${upstream_tag}"
-            fi
-            publish="${INPUT_PUBLISH:-false}"
-          fi
+          upstream_tag="${INPUT_UPSTREAM_TAG}"
+          release_ref="${INPUT_RELEASE_REF}"
+          internal_tag="${INPUT_INTERNAL_TAG:-}"
+          publish="${INPUT_PUBLISH:-true}"
 
           if [[ ! "${upstream_tag}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "unexpected upstream tag format: ${upstream_tag}" >&2
             exit 1
+          fi
+
+          if [[ -z "${release_ref}" ]]; then
+            echo "release_ref is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "${internal_tag}" ]]; then
+            internal_tag="internal-${upstream_tag}"
           fi
 
           echo "internal_tag=${internal_tag}" >> "$GITHUB_OUTPUT"
@@ -355,6 +324,7 @@ jobs:
         with:
           name: ${{ needs.meta.outputs.version }}-internal
           tag_name: ${{ needs.meta.outputs.internal_tag }}
+          target_commitish: ${{ needs.meta.outputs.release_ref }}
           body_path: ${{ steps.notes.outputs.path }}
           files: dist/**
           prerelease: false

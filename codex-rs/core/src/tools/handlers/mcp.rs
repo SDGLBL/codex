@@ -13,11 +13,25 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
+use codex_tools::ToolName;
 use serde_json::Value;
 
-pub struct McpHandler;
+pub struct McpHandler {
+    tool_name: ToolName,
+}
+
+impl McpHandler {
+    pub fn new(tool_name: ToolName) -> Self {
+        Self { tool_name }
+    }
+}
+
 impl ToolHandler for McpHandler {
     type Output = McpToolOutput;
+
+    fn tool_name(&self) -> ToolName {
+        self.tool_name.clone()
+    }
 
     fn kind(&self) -> ToolKind {
         ToolKind::Mcp
@@ -29,7 +43,7 @@ impl ToolHandler for McpHandler {
         };
 
         Some(PreToolUsePayload {
-            tool_name: HookToolName::new(invocation.tool_name.display()),
+            tool_name: HookToolName::new(self.tool_name.display()),
             tool_input: mcp_hook_tool_input(raw_arguments),
         })
     }
@@ -46,7 +60,7 @@ impl ToolHandler for McpHandler {
         let tool_response =
             result.post_tool_use_response(&invocation.call_id, &invocation.payload)?;
         Some(PostToolUsePayload {
-            tool_name: HookToolName::new(invocation.tool_name.display()),
+            tool_name: HookToolName::new(self.tool_name.display()),
             tool_use_id: invocation.call_id.clone(),
             tool_input: result.tool_input.clone(),
             tool_response,
@@ -58,7 +72,6 @@ impl ToolHandler for McpHandler {
             session,
             turn,
             call_id,
-            tool_name: model_tool_name,
             payload,
             ..
         } = invocation;
@@ -86,7 +99,7 @@ impl ToolHandler for McpHandler {
             call_id.clone(),
             server,
             tool,
-            model_tool_name.display(),
+            self.tool_name.display(),
             arguments_str,
         )
         .await;
@@ -96,6 +109,7 @@ impl ToolHandler for McpHandler {
             tool_input: result.tool_input,
             wall_time: started.elapsed(),
             original_image_detail_supported: can_request_original_image_detail(&turn.model_info),
+            truncation_policy: turn.truncation_policy,
         })
     }
 }
@@ -112,6 +126,7 @@ fn mcp_hook_tool_input(raw_arguments: &str) -> Value {
 mod tests {
     use super::*;
     use crate::session::tests::make_session_and_context;
+    use crate::tools::context::ToolCallSource;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -132,15 +147,20 @@ mod tests {
             .to_string(),
         };
         let (session, turn) = make_session_and_context().await;
+        let handler = McpHandler::new(codex_tools::ToolName::namespaced(
+            "mcp__memory__",
+            "create_entities",
+        ));
 
         assert_eq!(
-            McpHandler.pre_tool_use_payload(&ToolInvocation {
+            handler.pre_tool_use_payload(&ToolInvocation {
                 session: session.into(),
                 turn: turn.into(),
                 cancellation_token: tokio_util::sync::CancellationToken::new(),
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-mcp-pre".to_string(),
                 tool_name: codex_tools::ToolName::namespaced("mcp__memory__", "create_entities"),
+                source: ToolCallSource::Direct,
                 payload,
             }),
             Some(PreToolUsePayload {
@@ -179,8 +199,13 @@ mod tests {
             }),
             wall_time: Duration::from_millis(42),
             original_image_detail_supported: true,
+            truncation_policy: codex_utils_output_truncation::TruncationPolicy::Bytes(1024),
         };
         let (session, turn) = make_session_and_context().await;
+        let handler = McpHandler::new(codex_tools::ToolName::namespaced(
+            "mcp__filesystem__",
+            "read_file",
+        ));
         let invocation = ToolInvocation {
             session: session.into(),
             turn: turn.into(),
@@ -188,10 +213,11 @@ mod tests {
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-mcp-post".to_string(),
             tool_name: codex_tools::ToolName::namespaced("mcp__filesystem__", "read_file"),
+            source: ToolCallSource::Direct,
             payload,
         };
         assert_eq!(
-            McpHandler.post_tool_use_payload(&invocation, &output),
+            handler.post_tool_use_payload(&invocation, &output),
             Some(PostToolUsePayload {
                 tool_name: HookToolName::new("mcp__filesystem__read_file"),
                 tool_use_id: "call-mcp-post".to_string(),

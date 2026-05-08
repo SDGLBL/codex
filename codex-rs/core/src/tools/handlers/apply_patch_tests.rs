@@ -37,6 +37,7 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
         tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
         call_id: "call-apply-patch".to_string(),
         tool_name: codex_tools::ToolName::plain("apply_patch"),
+        source: crate::tools::context::ToolCallSource::Direct,
         payload,
     }
 }
@@ -135,7 +136,7 @@ fn diff_consumer_streams_apply_patch_changes() {
             HashMap::from([(
                 PathBuf::from("hello.txt"),
                 FileChange::Add {
-                    content: "hello\n".to_string(),
+                    content: String::new(),
                 },
             )]),
         )
@@ -146,8 +147,16 @@ fn diff_consumer_streams_apply_patch_changes() {
             .push_delta("call-1".to_string(), "\n+world")
             .is_none()
     );
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), "\n*** End Patch")
+            .is_none()
+    );
 
-    let event = consumer.flush_update_on_complete().expect("progress event");
+    let event = consumer
+        .finish_update_on_complete()
+        .expect("finish parser")
+        .expect("progress event");
     assert_eq!(
         (event.call_id, event.changes),
         (
@@ -174,7 +183,7 @@ fn diff_consumer_sends_next_update_after_buffer_interval() {
         HashMap::from([(
             PathBuf::from("hello.txt"),
             FileChange::Add {
-                content: "hello\n".to_string(),
+                content: String::new(),
             },
         )])
     );
@@ -189,7 +198,7 @@ fn diff_consumer_sends_next_update_after_buffer_interval() {
         HashMap::from([(
             PathBuf::from("hello.txt"),
             FileChange::Add {
-                content: "hello\nworld\n".to_string(),
+                content: "hello\n".to_string(),
             },
         )])
     );
@@ -238,7 +247,6 @@ fn write_permissions_for_paths_skip_dirs_already_writable_under_workspace_root()
         .expect("nested file path should be absolute");
     let sandbox_policy = FileSystemSandboxPolicy::from(&SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
-        read_only_access: Default::default(),
         network_access: false,
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: false,
@@ -261,7 +269,6 @@ fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
     let cwd_abs = cwd.abs();
     let sandbox_policy = FileSystemSandboxPolicy::from(&SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
-        read_only_access: Default::default(),
         network_access: false,
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,

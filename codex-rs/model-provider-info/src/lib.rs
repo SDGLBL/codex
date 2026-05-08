@@ -36,7 +36,8 @@ const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
 pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
-pub const AMAZON_BEDROCK_DEFAULT_BASE_URL: &str = "https://bedrock-mantle.us-east-1.api.aws/v1";
+pub const AMAZON_BEDROCK_DEFAULT_BASE_URL: &str =
+    "https://bedrock-mantle.us-east-1.api.aws/openai/v1";
 const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
@@ -386,12 +387,8 @@ impl ModelProviderInfo {
         self.name == AMAZON_BEDROCK_PROVIDER_NAME
     }
 
-    pub fn is_azure_responses_provider(&self) -> bool {
-        is_azure_responses_provider(&self.name, self.base_url.as_deref())
-    }
-
     pub fn supports_remote_compaction(&self) -> bool {
-        self.is_openai() || self.is_azure_responses_provider()
+        self.is_openai() || is_azure_responses_provider(&self.name, self.base_url.as_deref())
     }
 
     pub fn has_command_auth(&self) -> bool {

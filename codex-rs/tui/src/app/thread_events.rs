@@ -19,7 +19,7 @@ pub(super) struct ThreadEventSnapshot {
 pub(super) enum ThreadBufferedEvent {
     Notification(ServerNotification),
     Request(ServerRequest),
-    HistoryEntryResponse(GetHistoryEntryResponseEvent),
+    HistoryEntryResponse(HistoryLookupResponse),
     FeedbackSubmission(FeedbackThreadEvent),
 }
 
@@ -157,6 +157,40 @@ impl ThreadEventStore {
             .collect()
     }
 
+    pub(super) fn file_change_changes(
+        &self,
+        turn_id: &str,
+        item_id: &str,
+    ) -> Option<Vec<codex_app_server_protocol::FileUpdateChange>> {
+        self.buffer
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                ThreadBufferedEvent::Notification(ServerNotification::ItemStarted(
+                    notification,
+                )) if turn_id_matches(turn_id, &notification.turn_id) => {
+                    file_change_item_changes(&notification.item, item_id)
+                }
+                ThreadBufferedEvent::Notification(ServerNotification::ItemCompleted(
+                    notification,
+                )) if turn_id_matches(turn_id, &notification.turn_id) => {
+                    file_change_item_changes(&notification.item, item_id)
+                }
+                ThreadBufferedEvent::Request(_)
+                | ThreadBufferedEvent::Notification(_)
+                | ThreadBufferedEvent::HistoryEntryResponse(_)
+                | ThreadBufferedEvent::FeedbackSubmission(_) => None,
+            })
+            .or_else(|| {
+                self.turns
+                    .iter()
+                    .rev()
+                    .filter(|turn| turn_id_matches(turn_id, &turn.id))
+                    .flat_map(|turn| turn.items.iter().rev())
+                    .find_map(|item| file_change_item_changes(item, item_id))
+            })
+    }
+
     pub(super) fn apply_thread_rollback(&mut self, response: &ThreadRollbackResponse) {
         self.turns = response.thread.turns.clone();
         self.buffer.clear();
@@ -231,6 +265,20 @@ impl ThreadEventStore {
     }
 }
 
+fn turn_id_matches(request_turn_id: &str, candidate_turn_id: &str) -> bool {
+    request_turn_id.is_empty() || request_turn_id == candidate_turn_id
+}
+
+fn file_change_item_changes(
+    item: &ThreadItem,
+    item_id: &str,
+) -> Option<Vec<codex_app_server_protocol::FileUpdateChange>> {
+    match item {
+        ThreadItem::FileChange { id, changes, .. } if id == item_id => Some(changes.clone()),
+        _ => None,
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct ThreadEventChannel {
     pub(super) sender: mpsc::Sender<ThreadBufferedEvent>,
@@ -270,6 +318,7 @@ mod tests {
     use super::*;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
+    use codex_app_server_protocol::AskForApproval;
     use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
     use codex_app_server_protocol::HookCompletedNotification;
     use codex_app_server_protocol::HookEventName as AppServerHookEventName;
@@ -286,8 +335,6 @@ mod tests {
     use codex_app_server_protocol::TurnStartedNotification;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::models::PermissionProfile;
-    use codex_protocol::protocol::AskForApproval;
-    use codex_protocol::protocol::SandboxPolicy;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
@@ -302,16 +349,12 @@ mod tests {
             service_tier: None,
             approval_policy: AskForApproval::Never,
             approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            permission_profile: Some(PermissionProfile::from_legacy_sandbox_policy(
-                &SandboxPolicy::new_read_only_policy(),
-                cwd.as_path(),
-            )),
+            permission_profile: PermissionProfile::read_only(),
+            active_permission_profile: None,
             cwd: cwd.abs(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            history_log_id: 0,
-            history_entry_count: 0,
+            message_history: None,
             network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         }
@@ -320,6 +363,7 @@ mod tests {
     fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
         Turn {
             id: turn_id.to_string(),
+            items_view: codex_app_server_protocol::TurnItemsView::Full,
             items,
             status,
             error: None,

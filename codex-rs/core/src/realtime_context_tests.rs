@@ -49,6 +49,7 @@ fn stored_thread(cwd: &str, title: &str, first_user_message: &str) -> StoredThre
         cwd: PathBuf::from(cwd),
         cli_version: "test".to_string(),
         source: SessionSource::Cli,
+        thread_source: None,
         agent_nickname: None,
         agent_role: None,
         agent_path: None,
@@ -70,7 +71,6 @@ fn message(role: &str, content: ContentItem) -> ResponseItem {
         id: None,
         role: role.to_string(),
         content: vec![content],
-        end_turn: None,
         phase: None,
     }
 }
