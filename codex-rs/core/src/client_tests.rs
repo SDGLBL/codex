@@ -80,6 +80,7 @@ fn test_model_client_with_parent(
         session_source,
         parent_thread_id,
         /*model_verbosity*/ None,
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
