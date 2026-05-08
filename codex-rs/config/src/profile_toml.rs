@@ -26,6 +26,7 @@ pub struct ConfigProfile {
     /// Optional explicit service tier request id for new turns (for example
     /// `priority` or `flex`; legacy `fast` also works).
     pub service_tier: Option<String>,
+    pub model_max_output_tokens: Option<i64>,
     /// The key in the `model_providers` map identifying the
     /// [`ModelProviderInfo`] to use.
     pub model_provider: Option<String>,
