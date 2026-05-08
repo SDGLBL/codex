@@ -74,6 +74,7 @@ fn test_model_client_with_parent(
         /*auth_manager*/ None,
         thread_id.into(),
         thread_id,
+        thread_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
         session_source,

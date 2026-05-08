@@ -2360,6 +2360,26 @@ impl InitialHistory {
         }
     }
 
+    pub fn wire_session_id(&self) -> Option<ThreadId> {
+        match self {
+            InitialHistory::New | InitialHistory::Cleared => None,
+            InitialHistory::Resumed(resumed) => {
+                resumed.history.iter().find_map(|item| match item {
+                    RolloutItem::SessionMeta(meta_line) => {
+                        Some(meta_line.meta.wire_session_id.unwrap_or(meta_line.meta.id))
+                    }
+                    _ => None,
+                })
+            }
+            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
+                RolloutItem::SessionMeta(meta_line) => {
+                    Some(meta_line.meta.wire_session_id.unwrap_or(meta_line.meta.id))
+                }
+                _ => None,
+            }),
+        }
+    }
+
     pub fn forked_from_id(&self) -> Option<ThreadId> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
@@ -2774,6 +2794,8 @@ pub enum MultiAgentVersion {
 pub struct SessionMeta {
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub wire_session_id: Option<ThreadId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_thread_id: Option<ThreadId>,
@@ -2812,6 +2834,7 @@ impl Default for SessionMeta {
     fn default() -> Self {
         SessionMeta {
             id: ThreadId::default(),
+            wire_session_id: None,
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: String::new(),
