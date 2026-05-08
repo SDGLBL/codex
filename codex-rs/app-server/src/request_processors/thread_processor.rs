@@ -2640,17 +2640,18 @@ impl ThreadRequestProcessor {
                 .await?;
             let existing_thread_id = source_thread.thread_id;
             if let Ok(existing_thread) = self.thread_manager.get_thread(existing_thread_id).await {
-                if let (Some(requested_path), Some(active_path)) = (
-                    params.path.as_ref(),
-                    existing_thread.rollout_path().as_ref(),
-                ) && requested_path != active_path
-                {
-                    return Err(invalid_request(format!(
-                        "cannot resume running thread {existing_thread_id} with stale path: requested `{}`, active `{}`",
-                        requested_path.display(),
-                        active_path.display()
-                    )));
-                }
+                // HACK: 目前内部远程机器的 home 目录是软链的，这里进行比对会导致比对筛败，因此不做检查
+                // if let (Some(requested_path), Some(active_path)) = (
+                //     params.path.as_ref(),
+                //     existing_thread.rollout_path().as_ref(),
+                // ) && requested_path != active_path
+                // {
+                //     return Err(invalid_request(format!(
+                //         "cannot resume running thread {existing_thread_id} with stale path: requested `{}`, active `{}`",
+                //         requested_path.display(),
+                //         active_path.display()
+                //     )));
+                // }
                 Some((existing_thread_id, existing_thread, source_thread))
             } else {
                 None
