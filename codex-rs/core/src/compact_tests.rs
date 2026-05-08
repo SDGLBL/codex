@@ -316,16 +316,26 @@ async fn process_compacted_history_retains_ordered_reasoning_assistant_pair() {
 }
 
 #[tokio::test]
-async fn process_compacted_history_drops_orphan_assistant_messages() {
-    let compacted_history = vec![assistant_item("msg-orphan", "orphan assistant")];
+async fn process_compacted_history_converts_orphan_assistant_summary_to_user_summary() {
+    let compacted_history = vec![assistant_item("msg-orphan", "orphan assistant summary")];
 
     let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
 
-    assert_eq!(refreshed, Vec::<ResponseItem>::new());
+    assert_eq!(
+        refreshed,
+        vec![ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: format!("{SUMMARY_PREFIX}\norphan assistant summary"),
+            }],
+            phase: None,
+        }]
+    );
 }
 
 #[tokio::test]
-async fn process_compacted_history_drops_misordered_or_separated_assistant_messages() {
+async fn process_compacted_history_converts_misordered_or_separated_assistant_messages() {
     let user = user_item("user-separator", "separator");
     let compacted_history = vec![
         assistant_item("msg-before", "assistant before reasoning"),
@@ -336,7 +346,28 @@ async fn process_compacted_history_drops_misordered_or_separated_assistant_messa
 
     let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
 
-    assert_eq!(refreshed, vec![user]);
+    assert_eq!(
+        refreshed,
+        vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: format!("{SUMMARY_PREFIX}\nassistant before reasoning"),
+                }],
+                phase: None,
+            },
+            user,
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: format!("{SUMMARY_PREFIX}\nassistant separated from reasoning"),
+                }],
+                phase: None,
+            },
+        ]
+    );
 }
 
 #[tokio::test]
