@@ -85,6 +85,7 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
     let session_meta_line = SessionMetaLine {
         meta: SessionMeta {
             id: thread_id,
+            wire_session_id: None,
             forked_from_id: None,
             timestamp: "2026-01-27T12:34:56Z".to_string(),
             cwd: home.path().to_path_buf(),
@@ -368,6 +369,7 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             SessionSource::Exec,
             /*thread_source*/ None,
@@ -446,6 +448,7 @@ async fn persist_reports_filesystem_error_and_retries_buffered_items() -> std::i
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
+            thread_id,
             thread_id,
             /*forked_from_id*/ None,
             SessionSource::Exec,

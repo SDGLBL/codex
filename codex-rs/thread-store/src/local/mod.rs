@@ -1012,6 +1012,7 @@ mod tests {
     fn create_thread_params(thread_id: ThreadId) -> CreateThreadParams {
         CreateThreadParams {
             thread_id,
+            wire_session_id: thread_id,
             forked_from_id: None,
             source: SessionSource::Exec,
             thread_source: None,
