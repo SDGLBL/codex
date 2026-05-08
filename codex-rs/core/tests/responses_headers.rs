@@ -102,6 +102,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         /*auth_manager*/ None,
         thread_id.into(),
         thread_id,
+        thread_id,
         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
         provider.clone(),
         session_source,
@@ -235,6 +236,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
         /*auth_manager*/ None,
         thread_id.into(),
         thread_id,
+        thread_id,
         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
         provider.clone(),
         session_source,
@@ -352,6 +354,7 @@ async fn responses_respects_model_info_overrides_from_config() {
     let client = ModelClient::new(
         /*auth_manager*/ None,
         thread_id.into(),
+        thread_id,
         thread_id,
         /*installation_id*/ TEST_INSTALLATION_ID.to_string(),
         provider.clone(),
