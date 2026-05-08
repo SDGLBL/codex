@@ -47,3 +47,9 @@ has the named member, Codex upserts configured fields and preserves other fields
 in that member. This config shape does not support setting opaque tracestate
 member values. Invalid trace metadata entries are ignored during config load and
 reported as startup warnings.
+
+## Model output limits
+
+`model_max_output_tokens` lets you cap the maximum output tokens requested from
+the configured model provider. It can be set globally in `config.toml` or inside
+profiles, and profile values override the top-level setting.
