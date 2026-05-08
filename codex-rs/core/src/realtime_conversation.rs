@@ -782,6 +782,10 @@ pub(crate) async fn build_realtime_session_config(
         RealtimeWsMode::Conversational => RealtimeSessionMode::Conversational,
         RealtimeWsMode::Transcription => RealtimeSessionMode::Transcription,
     };
+    let requested_session_id = match realtime_session_id {
+        Some(session_id) => session_id,
+        None => sess.wire_session_id().await.to_string(),
+    };
     let voice = voice
         .or(config.realtime.voice)
         .unwrap_or_else(|| default_realtime_voice(version));
@@ -789,7 +793,7 @@ pub(crate) async fn build_realtime_session_config(
     Ok(RealtimeSessionConfig {
         instructions: prompt,
         model,
-        session_id: Some(realtime_session_id.unwrap_or_else(|| sess.thread_id.to_string())),
+        session_id: Some(requested_session_id),
         event_parser,
         session_mode,
         output_modality,
