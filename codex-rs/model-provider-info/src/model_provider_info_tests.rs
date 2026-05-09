@@ -184,7 +184,7 @@ fn test_supports_remote_compaction_for_openai() {
 }
 
 #[test]
-fn test_supports_remote_compaction_for_azure_name() {
+fn test_supports_remote_compaction_for_azure_name_is_disabled() {
     let provider = ModelProviderInfo {
         name: "Azure".into(),
         base_url: Some("https://example.com/openai".into()),
@@ -206,7 +206,7 @@ fn test_supports_remote_compaction_for_azure_name() {
         supports_websockets: false,
     };
 
-    assert!(provider.supports_remote_compaction());
+    assert!(!provider.supports_remote_compaction());
 }
 
 #[test]
