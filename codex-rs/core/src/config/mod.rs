@@ -413,6 +413,9 @@ pub struct Config {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// Force local model-driven compaction instead of provider remote compaction.
+    pub force_local_compaction: bool,
+
     /// Optional override of the maximum output tokens to request from the model.
     pub model_max_output_tokens: Option<i64>,
 
@@ -2988,6 +2991,10 @@ impl Config {
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            force_local_compaction: config_profile
+                .force_local_compaction
+                .or(cfg.force_local_compaction)
+                .unwrap_or(false),
             model_max_output_tokens: config_profile
                 .model_max_output_tokens
                 .or(cfg.model_max_output_tokens),

@@ -5503,6 +5503,31 @@ async fn loads_compact_prompt_from_file() -> std::io::Result<()> {
 }
 
 #[tokio::test]
+async fn profile_can_force_local_compaction() -> std::io::Result<()> {
+    let fixture = create_test_fixture()?;
+    let mut cfg = fixture.cfg.clone();
+    cfg.force_local_compaction = Some(false);
+    cfg.profiles
+        .get_mut("gpt3")
+        .expect("gpt3 profile exists")
+        .force_local_compaction = Some(true);
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            config_profile: Some("gpt3".to_string()),
+            cwd: Some(fixture.cwd_path()),
+            ..Default::default()
+        },
+        fixture.codex_home(),
+    )
+    .await?;
+
+    assert!(config.force_local_compaction);
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_config_uses_requirements_guardian_policy_config() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let config_layer_stack = ConfigLayerStack::new(
@@ -6970,6 +6995,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             review_model: None,
             model_context_window: None,
             model_auto_compact_token_limit: None,
+            force_local_compaction: false,
             model_max_output_tokens: None,
             service_tier: None,
             model_provider_id: "openai".to_string(),
@@ -7343,6 +7369,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        force_local_compaction: false,
         model_max_output_tokens: None,
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
@@ -7502,6 +7529,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        force_local_compaction: false,
         model_max_output_tokens: None,
         service_tier: None,
         model_provider_id: "openai".to_string(),
@@ -7646,6 +7674,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        force_local_compaction: false,
         model_max_output_tokens: None,
         service_tier: None,
         model_provider_id: "openai".to_string(),

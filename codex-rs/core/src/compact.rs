@@ -62,8 +62,11 @@ pub(crate) enum InitialContextInjection {
     DoNotInject,
 }
 
-pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
-    provider.supports_remote_compaction()
+pub(crate) fn should_use_remote_compact_task(
+    provider: &ModelProviderInfo,
+    force_local_compaction: bool,
+) -> bool {
+    provider.supports_remote_compaction() && !force_local_compaction
 }
 
 pub(crate) async fn run_inline_auto_compact_task(

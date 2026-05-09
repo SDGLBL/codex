@@ -178,6 +178,10 @@ pub struct ConfigToml {
     /// Compact prompt used for history compaction.
     pub compact_prompt: Option<String>,
 
+    /// When true, use local model-driven compaction even when the configured
+    /// provider supports remote compaction.
+    pub force_local_compaction: Option<bool>,
+
     /// Optional commit attribution text for commit message co-author trailers.
     /// This top-level setting only takes effect when `[features].codex_git_commit`
     /// is enabled.

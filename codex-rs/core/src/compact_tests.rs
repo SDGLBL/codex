@@ -221,7 +221,12 @@ fn should_use_remote_compact_task_for_azure_provider() {
         supports_websockets: false,
     };
 
-    assert!(should_use_remote_compact_task(&provider));
+    assert!(should_use_remote_compact_task(
+        &provider, /*force_local_compaction*/ false
+    ));
+    assert!(!should_use_remote_compact_task(
+        &provider, /*force_local_compaction*/ true
+    ));
 }
 #[tokio::test]
 async fn process_compacted_history_replaces_developer_messages() {

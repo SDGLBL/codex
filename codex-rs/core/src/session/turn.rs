@@ -812,7 +812,10 @@ async fn run_auto_compact(
     reason: CompactionReason,
     phase: CompactionPhase,
 ) -> CodexResult<bool> {
-    if should_use_remote_compact_task(turn_context.provider.info()) {
+    if should_use_remote_compact_task(
+        turn_context.provider.info(),
+        turn_context.config.force_local_compaction,
+    ) {
         if turn_context.features.enabled(Feature::RemoteCompactionV2) {
             run_inline_remote_auto_compact_task_v2(
                 Arc::clone(sess),
