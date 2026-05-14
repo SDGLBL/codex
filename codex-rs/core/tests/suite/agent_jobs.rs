@@ -3,6 +3,7 @@ use codex_features::Feature;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
@@ -23,6 +24,8 @@ use wiremock::matchers::path_regex;
 
 struct AgentJobsResponder {
     spawn_args_json: String,
+    expected_worker_instruction: Option<String>,
+    saw_expected_worker_instruction: Arc<AtomicBool>,
     seen_main: AtomicBool,
     call_counter: AtomicUsize,
 }
@@ -31,6 +34,22 @@ impl AgentJobsResponder {
     fn new(spawn_args_json: String) -> Self {
         Self {
             spawn_args_json,
+            expected_worker_instruction: None,
+            saw_expected_worker_instruction: Arc::new(AtomicBool::new(false)),
+            seen_main: AtomicBool::new(false),
+            call_counter: AtomicUsize::new(0),
+        }
+    }
+
+    fn new_with_expected_worker_instruction(
+        spawn_args_json: String,
+        expected_worker_instruction: String,
+        saw_expected_worker_instruction: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            spawn_args_json,
+            expected_worker_instruction: Some(expected_worker_instruction),
+            saw_expected_worker_instruction,
             seen_main: AtomicBool::new(false),
             call_counter: AtomicUsize::new(0),
         }
@@ -112,7 +131,14 @@ impl Respond for AgentJobsResponder {
             ]));
         }
 
-        if let Some((job_id, item_id)) = extract_job_and_item(&body) {
+        let combined = combined_request_text(&body);
+        if let Some(expected) = self.expected_worker_instruction.as_ref()
+            && combined.contains(expected)
+        {
+            self.saw_expected_worker_instruction
+                .store(true, Ordering::SeqCst);
+        }
+        if let Some((job_id, item_id)) = extract_job_and_item_from_text(combined.as_str()) {
             let call_id = format!(
                 "call-worker-{}",
                 self.call_counter.fetch_add(1, Ordering::SeqCst)
@@ -177,23 +203,32 @@ fn has_function_call_output(body: &Value) -> bool {
 }
 
 fn extract_job_and_item(body: &Value) -> Option<(String, String)> {
+    let combined = combined_request_text(body);
+    extract_job_and_item_from_text(combined.as_str())
+}
+
+fn combined_request_text(body: &Value) -> String {
     let texts = message_input_texts(body);
     let mut combined = texts.join("\n");
     if let Some(instructions) = body.get("instructions").and_then(Value::as_str) {
         combined.push('\n');
         combined.push_str(instructions);
     }
+    combined
+}
+
+fn extract_job_and_item_from_text(combined: &str) -> Option<(String, String)> {
     if !combined.contains("You are processing one item for a generic agent job.") {
         return None;
     }
     let job_id = Regex::new(r"Job ID:\s*([^\n]+)")
         .ok()?
-        .captures(&combined)
+        .captures(combined)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().trim().to_string())?;
     let item_id = Regex::new(r"Item ID:\s*([^\n]+)")
         .ok()?
-        .captures(&combined)
+        .captures(combined)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().trim().to_string())?;
     Some((job_id, item_id))
@@ -323,6 +358,156 @@ async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
     assert!(output.contains("result_json"));
     assert!(output.contains("item_id"));
     assert!(output.contains("\"item_id\""));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agents_on_csv_reads_instruction_path_before_inline_instruction() -> Result<()> {
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let input_path = test.cwd_path().join("agent_jobs_instruction_path.csv");
+    let output_path = test
+        .cwd_path()
+        .join("agent_jobs_instruction_path_output.csv");
+    let instruction_path = test.cwd_path().join("agent_jobs_instruction.md");
+    fs::write(&input_path, "path\nfile-from-csv\n")?;
+    fs::write(&instruction_path, "File instruction {path}")?;
+
+    let args = json!({
+        "csv_path": input_path.display().to_string(),
+        "instruction": "Inline instruction {path}",
+        "instruction_path": "agent_jobs_instruction.md",
+        "output_csv_path": output_path.display().to_string(),
+    });
+    let args_json = serde_json::to_string(&args)?;
+
+    let saw_instruction = Arc::new(AtomicBool::new(false));
+    let responder = AgentJobsResponder::new_with_expected_worker_instruction(
+        args_json,
+        "File instruction file-from-csv".to_string(),
+        saw_instruction.clone(),
+    );
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(responder)
+        .mount(&server)
+        .await;
+
+    test.submit_turn("run batch job with instruction path")
+        .await?;
+
+    let output = fs::read_to_string(&output_path)?;
+    assert!(output.contains("result_json"));
+    assert!(saw_instruction.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agents_on_csv_reports_missing_instruction_path() -> Result<()> {
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let input_path = test.cwd_path().join("agent_jobs_missing_instruction.csv");
+    let instruction_path = test.cwd_path().join("missing_instruction.md");
+    fs::write(&input_path, "path\nfile-from-csv\n")?;
+
+    let args = json!({
+        "csv_path": input_path.display().to_string(),
+        "instruction": "Inline instruction {path}",
+        "instruction_path": instruction_path.display().to_string(),
+    });
+    let args_json = serde_json::to_string(&args)?;
+    let responses = vec![
+        sse(vec![
+            ev_response_created("resp-main"),
+            ev_function_call("call-spawn", "spawn_agents_on_csv", &args_json),
+            ev_completed("resp-main"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-tool"),
+            ev_completed("resp-tool"),
+        ]),
+    ];
+    let mock = mount_sse_sequence(&server, responses).await;
+
+    test.submit_turn("run batch job with missing instruction path")
+        .await?;
+
+    let output = mock
+        .function_call_output_text("call-spawn")
+        .expect("spawn_agents_on_csv output present");
+    assert!(output.contains("failed to read instruction input"));
+    assert!(output.contains("missing_instruction.md"));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agents_on_csv_rejects_empty_instruction_file() -> Result<()> {
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let input_path = test.cwd_path().join("agent_jobs_empty_instruction.csv");
+    let instruction_path = test.cwd_path().join("empty_instruction.md");
+    fs::write(&input_path, "path\nfile-from-csv\n")?;
+    fs::write(&instruction_path, " \n\t")?;
+
+    let args = json!({
+        "csv_path": input_path.display().to_string(),
+        "instruction": "Inline instruction {path}",
+        "instruction_path": instruction_path.display().to_string(),
+    });
+    let args_json = serde_json::to_string(&args)?;
+    let responses = vec![
+        sse(vec![
+            ev_response_created("resp-main"),
+            ev_function_call("call-spawn", "spawn_agents_on_csv", &args_json),
+            ev_completed("resp-main"),
+        ]),
+        sse(vec![
+            ev_response_created("resp-tool"),
+            ev_completed("resp-tool"),
+        ]),
+    ];
+    let mock = mount_sse_sequence(&server, responses).await;
+
+    test.submit_turn("run batch job with empty instruction file")
+        .await?;
+
+    let output = mock
+        .function_call_output_text("call-spawn")
+        .expect("spawn_agents_on_csv output present");
+    assert!(output.contains("instruction must be non-empty"));
     Ok(())
 }
 
