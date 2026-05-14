@@ -4,12 +4,12 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
 #[test]
-fn spawn_agents_on_csv_tool_requires_csv_and_instruction() {
+fn spawn_agents_on_csv_tool_requires_csv_and_accepts_instruction_path() {
     assert_eq!(
         create_spawn_agents_on_csv_tool(),
         ToolSpec::Function(ResponsesApiTool {
             name: "spawn_agents_on_csv".to_string(),
-            description: "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
+            description: "Process a CSV by spawning one worker sub-agent per row. The instruction or instruction_path file content is a template where `{column}` placeholders are replaced with row values; instruction_path takes precedence when provided. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
                 .to_string(),
             strict: false,
             defer_loading: None,
@@ -23,7 +23,14 @@ fn spawn_agents_on_csv_tool_requires_csv_and_instruction() {
                     (
                         "instruction".to_string(),
                         JsonSchema::string(Some(
-                            "Instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row."
+                            "Optional instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row. Ignored when instruction_path is provided."
+                                .to_string(),
+                        )),
+                    ),
+                    (
+                        "instruction_path".to_string(),
+                        JsonSchema::string(Some(
+                            "Optional path to a file containing the instruction template. When provided, it takes precedence over instruction."
                                 .to_string(),
                         )),
                     ),
@@ -67,7 +74,7 @@ fn spawn_agents_on_csv_tool_requires_csv_and_instruction() {
                             /*additional_properties*/ None,
                         ),
                     ),
-                ]), Some(vec!["csv_path".to_string(), "instruction".to_string()]), Some(false.into())),
+                ]), Some(vec!["csv_path".to_string()]), Some(false.into())),
             output_schema: None,
         })
     );

@@ -44,7 +44,8 @@ const DEFAULT_AGENT_JOB_ITEM_TIMEOUT: Duration = Duration::from_secs(60 * 30);
 #[derive(Debug, Deserialize)]
 struct SpawnAgentsOnCsvArgs {
     csv_path: String,
-    instruction: String,
+    instruction: Option<String>,
+    instruction_path: Option<String>,
     id_column: Option<String>,
     output_csv_path: Option<String>,
     output_schema: Option<Value>,
