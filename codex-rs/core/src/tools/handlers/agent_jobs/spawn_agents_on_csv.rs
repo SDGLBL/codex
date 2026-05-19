@@ -72,12 +72,13 @@ pub async fn handle(
     arguments: String,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: SpawnAgentsOnCsvArgs = parse_arguments(arguments.as_str())?;
+    let cwd = single_local_environment_cwd(&turn)?;
     let instruction = if let Some(instruction_path) = args
         .instruction_path
         .as_deref()
         .filter(|path| !path.trim().is_empty())
     {
-        let instruction_path = turn.resolve_path(Some(instruction_path.to_string()));
+        let instruction_path = cwd.join(instruction_path);
         let instruction_path_display = instruction_path.display().to_string();
         tokio::fs::read_to_string(&instruction_path)
             .await
@@ -95,7 +96,6 @@ pub async fn handle(
         ));
     }
 
-    let cwd = single_local_environment_cwd(&turn)?;
     let db = required_state_db(&session)?;
     let input_path = cwd.join(args.csv_path);
     let input_path_display = input_path.display().to_string();
