@@ -1079,11 +1079,14 @@ async fn find_project_root(
     for ancestor in cwd.ancestors() {
         for marker in project_root_markers {
             let marker_path = ancestor.join(marker);
-            if fs
-                .get_metadata(&marker_path, /*sandbox*/ None)
-                .await
-                .is_ok()
-            {
+            let marker_found = if marker == ".git" {
+                is_git_entry(fs, &marker_path).await
+            } else {
+                fs.get_metadata(&marker_path, /*sandbox*/ None)
+                    .await
+                    .is_ok()
+            };
+            if marker_found {
                 return Ok(ancestor);
             }
         }
@@ -1102,11 +1105,24 @@ async fn find_git_checkout_root(
 
     for dir in base.ancestors() {
         let dot_git = dir.join(".git");
-        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+        if is_git_entry(fs, &dot_git).await {
             return Some(dir);
         }
     }
     None
+}
+
+async fn is_git_entry(fs: &dyn ExecutorFileSystem, dot_git: &AbsolutePathBuf) -> bool {
+    let Ok(metadata) = fs.get_metadata(dot_git, /*sandbox*/ None).await else {
+        return false;
+    };
+    metadata.is_file
+        || (metadata.is_directory
+            && fs
+                .get_metadata(&dot_git.join("HEAD"), /*sandbox*/ None)
+                .await
+                .ok()
+                .is_some_and(|metadata| metadata.is_file))
 }
 
 struct LoadedProjectLayers {
