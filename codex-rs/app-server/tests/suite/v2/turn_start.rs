@@ -579,7 +579,13 @@ async fn turn_start_emits_thread_scoped_warning_notification_for_trimmed_skills(
     write_test_skill(codex_home.path(), "alpha-skill")?;
     write_test_skill(codex_home.path(), "beta-skill")?;
 
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    let isolated_home = TempDir::new()?;
+    let isolated_home_env = isolated_home.path().to_string_lossy().to_string();
+    let mut mcp = McpProcess::new_with_env(
+        codex_home.path(),
+        &[("HOME", Some(isolated_home_env.as_str()))],
+    )
+    .await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let thread_req = mcp
