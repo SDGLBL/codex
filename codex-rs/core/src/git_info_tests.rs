@@ -542,6 +542,20 @@ async fn get_git_repo_root_with_fs_detects_gitdir_pointer() {
 }
 
 #[tokio::test]
+async fn resolve_root_git_project_for_trust_ignores_empty_dot_git_ancestor() {
+    let tmp = TempDir::new().expect("tempdir");
+    std::fs::create_dir(tmp.path().join(".git")).expect("create empty .git dir");
+    let child = tmp.path().join("child");
+    std::fs::create_dir(&child).expect("create child dir");
+
+    assert!(
+        resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &child.abs())
+            .await
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await.abs();
