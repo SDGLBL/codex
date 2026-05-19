@@ -529,15 +529,18 @@ fn model_client_with_counting_attestation(
             create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses),
         )
     };
+    let thread_id = ThreadId::new();
     let model_client = ModelClient::new(
         auth_manager,
         SessionId::new(),
-        ThreadId::new(),
+        thread_id,
+        thread_id,
         /*installation_id*/ "11111111-1111-4111-8111-111111111111".to_string(),
         provider,
         SessionSource::Exec,
         /*parent_thread_id*/ None,
         /*model_verbosity*/ None,
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,

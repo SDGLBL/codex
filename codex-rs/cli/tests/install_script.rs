@@ -316,6 +316,7 @@ fn assert_installed_binary_loads_internal_profile(home: &Path, install_dir: &Pat
         .arg("features")
         .arg("list")
         .env("HOME", home)
+        .env("CODEX_HOME", home.join(".codex"))
         .env(
             "PATH",
             format!("{}:{}", install_dir.display(), base_test_path()),
