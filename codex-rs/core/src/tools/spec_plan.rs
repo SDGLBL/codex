@@ -431,7 +431,7 @@ fn build_code_mode_executors(
         code_mode_nested_tool_specs.push(spec);
     }
 
-    let namespace_descriptions = code_mode_namespace_descriptions(&exec_prompt_tool_specs);
+    let namespace_descriptions = code_mode_namespace_descriptions(&code_mode_nested_tool_specs);
     let mut enabled_tools =
         collect_code_mode_exec_prompt_tool_definitions(exec_prompt_tool_specs.iter());
     enabled_tools
