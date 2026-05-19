@@ -364,10 +364,11 @@ prompt_for_install_config() {
 }
 
 run_internal_profile_bootstrap() {
+  mkdir -p "$HOME/.codex"
   if [ -n "$INSTALL_MODEL" ]; then
-    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
+    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
   else
-    printf '%s\n' "$INSTALL_AK" | "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
   fi
 }
 

@@ -175,6 +175,36 @@ mod thread_processor_behavior_tests {
         validate_dynamic_tools(&tools).expect("valid schema");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn rollout_paths_refer_to_same_file_accepts_symlinked_parent() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new()?;
+        let real_dir = temp_dir.path().join("real-home");
+        let link_dir = temp_dir.path().join("link-home");
+        std::fs::create_dir(&real_dir)?;
+        symlink(&real_dir, &link_dir)?;
+
+        let rollout_file = real_dir.join("rollout.jsonl");
+        std::fs::write(&rollout_file, "")?;
+        let linked_rollout_file = link_dir.join("rollout.jsonl");
+
+        assert!(rollout_paths_refer_to_same_file(
+            &linked_rollout_file,
+            &rollout_file
+        ));
+
+        let stale_file = real_dir.join("stale.jsonl");
+        std::fs::write(&stale_file, "")?;
+        assert!(!rollout_paths_refer_to_same_file(
+            &stale_file,
+            &rollout_file
+        ));
+
+        Ok(())
+    }
+
     #[test]
     fn validate_dynamic_tools_rejects_duplicate_name_in_same_namespace() {
         let tools = vec![
