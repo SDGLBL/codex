@@ -227,8 +227,8 @@ jobs:
         run: |
           set -euo pipefail
           target="${{ matrix.target }}"
-          if [[ "${target}" == "x86_64-unknown-linux-gnu" ]]; then
-            # Keep the hosted GNU runner under its memory ceiling during late release linking.
+          if [[ "${target}" == *"-linux-"* ]]; then
+            # Keep the hosted Linux runners under their memory ceiling during late release linking.
             export CARGO_PROFILE_RELEASE_LTO=thin
             cargo build --locked --target "${target}" --release --jobs 2 --bin codex-responses-api-proxy
             cargo build --locked --target "${target}" --release --jobs 2 --bin codex
