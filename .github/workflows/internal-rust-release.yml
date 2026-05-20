@@ -226,7 +226,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --locked --target "${{ matrix.target }}" --release --bin codex --bin codex-responses-api-proxy
+          target="${{ matrix.target }}"
+          if [[ "${target}" == "x86_64-unknown-linux-gnu" ]]; then
+            # Keep the hosted GNU runner under its memory ceiling during late release linking.
+            export CARGO_PROFILE_RELEASE_LTO=thin
+            cargo build --locked --target "${target}" --release --jobs 2 --bin codex-responses-api-proxy
+            cargo build --locked --target "${target}" --release --jobs 2 --bin codex
+          else
+            cargo build --locked --target "${target}" --release --bin codex --bin codex-responses-api-proxy
+          fi
 
       - name: Stage internal release assets
         shell: bash
