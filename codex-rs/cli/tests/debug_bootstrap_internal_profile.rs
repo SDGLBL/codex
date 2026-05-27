@@ -24,6 +24,12 @@ fn value_at_path<'a>(value: &'a TomlValue, segments: &[&str]) -> Option<&'a Toml
     Some(current)
 }
 
+fn read_config(codex_home: &Path, file_name: &str) -> Result<TomlValue> {
+    Ok(toml::from_str(&std::fs::read_to_string(
+        codex_home.join(file_name),
+    )?)?)
+}
+
 #[tokio::test]
 async fn debug_bootstrap_internal_profile_creates_internal_profile() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -40,40 +46,39 @@ async fn debug_bootstrap_internal_profile_creates_internal_profile() -> Result<(
     .assert()
     .success()
     .stdout(contains(
-        "Configured internal profile and set it as the default profile.",
+        "Configured internal profile. Run `codex --profile internal` to use it.",
     ));
 
-    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
-    )?)?;
+    let config = read_config(codex_home.path(), "config.toml")?;
+    let internal_config = read_config(codex_home.path(), "internal.config.toml")?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
-        Some("internal")
+        None
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(TEST_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some("secret-ak")
     );
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
     );
-    assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "features"]),
-        None
-    );
+    assert_eq!(value_at_path(&internal_config, &["features"]), None);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn debug_bootstrap_internal_profile_preserves_existing_profile() -> Result<()> {
+async fn debug_bootstrap_internal_profile_removes_legacy_profile_selector() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join("config.toml"),
@@ -96,22 +101,26 @@ model = "o4-mini"
     .write_stdin("next-ak\n")
     .assert()
     .success()
-    .stdout(contains("Existing active profile was preserved"));
+    .stdout(contains(
+        "Configured internal profile. Run `codex --profile internal` to use it.",
+    ));
 
-    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
-    )?)?;
+    let config = read_config(codex_home.path(), "config.toml")?;
+    let internal_config = read_config(codex_home.path(), "internal.config.toml")?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
-        Some("team")
+        None
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some("next-ak")
     );
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
     );
 
@@ -136,11 +145,9 @@ async fn debug_bootstrap_internal_profile_accepts_model_override() -> Result<()>
     .assert()
     .success();
 
-    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
-    )?)?;
+    let config = read_config(codex_home.path(), "internal.config.toml")?;
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some(TEST_MODEL)
     );
 
@@ -178,23 +185,27 @@ ak = "existing-ak"
     .assert()
     .success();
 
-    let config: TomlValue = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
-    )?)?;
+    let config = read_config(codex_home.path(), "config.toml")?;
+    let internal_config = read_config(codex_home.path(), "internal.config.toml")?;
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
         Some("existing-model")
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some("https://existing.example.test/openapi")
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some("existing-ak")
     );
+    assert_eq!(value_at_path(&config, &["profile"]), None);
+    assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
 
     Ok(())
 }

@@ -294,7 +294,15 @@ fn run_installer_failure(
 }
 
 fn read_installed_config(home: &Path) -> Result<TomlValue> {
-    let config_path = home.join(".codex").join("config.toml");
+    read_installed_config_file(home, "config.toml")
+}
+
+fn read_installed_internal_config(home: &Path) -> Result<TomlValue> {
+    read_installed_config_file(home, "internal.config.toml")
+}
+
+fn read_installed_config_file(home: &Path, file_name: &str) -> Result<TomlValue> {
+    let config_path = home.join(".codex").join(file_name);
     let serialized = fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
     Ok(toml::from_str(&serialized)?)
@@ -311,10 +319,11 @@ fn value_at_path<'a>(value: &'a TomlValue, segments: &[&str]) -> Option<&'a Toml
 
 fn assert_installed_binary_loads_internal_profile(home: &Path, install_dir: &Path) -> Result<()> {
     let output = Command::new(install_dir.join("codex"))
-        .arg("-p")
+        .arg("--profile")
         .arg("internal")
-        .arg("features")
-        .arg("list")
+        .arg("debug")
+        .arg("prompt-input")
+        .arg("smoke")
         .env("HOME", home)
         .env("CODEX_HOME", home.join(".codex"))
         .env(
@@ -354,7 +363,9 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         /*extra_path_prefix*/ None,
     )?;
     assert!(stdout.contains(platform.platform_label));
-    assert!(stdout.contains("Configured internal profile and set it as the default profile."));
+    assert!(
+        stdout.contains("Configured internal profile. Run `codex --profile internal` to use it.")
+    );
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
@@ -362,18 +373,22 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert!(home.path().join(".profile").is_file());
 
     let config = read_installed_config(home.path())?;
+    let internal_config = read_installed_internal_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
-        Some("internal")
+        None
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(INSTALL_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some(INSTALL_AK)
     );
     assert_eq!(
@@ -381,10 +396,7 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         None
     );
     assert_eq!(value_at_path(&config, &["tui", "status_line"]), None);
-    assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "features"]),
-        None
-    );
+    assert_eq!(value_at_path(&internal_config, &["features"]), None);
 
     assert_installed_binary_loads_internal_profile(home.path(), &install_dir)?;
     Ok(())
@@ -664,9 +676,9 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
         Some("gpt-5.4"),
     )?;
 
-    let config = read_installed_config(home.path())?;
+    let config = read_installed_internal_config(home.path())?;
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4")
     );
 
@@ -724,20 +736,26 @@ ak = "existing-ak"
     }
 
     let config = read_installed_config(home.path())?;
+    let internal_config = read_installed_internal_config(home.path())?;
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
         Some("existing-model")
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some("https://existing.example.test/openapi")
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some("existing-ak")
     );
+    assert_eq!(value_at_path(&config, &["profile"]), None);
+    assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
 
     Ok(())
 }
@@ -757,11 +775,8 @@ fn install_script_skips_bootstrap_when_internal_profile_exists_without_install_o
     let codex_home = home.path().join(".codex");
     fs::create_dir_all(&codex_home)?;
     fs::write(
-        codex_home.join("config.toml"),
+        codex_home.join("internal.config.toml"),
         r#"
-profile = "internal"
-
-[profiles.internal]
 model = "existing-model"
 
 [model_providers.azure]
@@ -815,9 +830,9 @@ ak = "existing-ak"
     assert!(!stderr.contains("failed to configure internal profile automatically"));
     assert!(!stderr.contains("To complete configuration manually, rerun:"));
 
-    let config = read_installed_config(home.path())?;
+    let config = read_installed_internal_config(home.path())?;
     assert_eq!(
-        value_at_path(&config, &["profiles", "internal", "model"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("existing-model")
     );
     assert_eq!(
@@ -891,16 +906,22 @@ ak = "existing-ak"
     assert!(stderr.contains("CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl"));
 
     let config = read_installed_config(home.path())?;
+    let internal_config = read_installed_internal_config(home.path())?;
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(crawl_url)
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &internal_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some("new-ak")
     );
+    assert_eq!(value_at_path(&config, &["profile"]), None);
+    assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
 
     Ok(())
 }

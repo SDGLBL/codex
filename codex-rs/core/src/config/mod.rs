@@ -3352,9 +3352,7 @@ impl Config {
             model_auto_compact_token_limit_scope: cfg
                 .model_auto_compact_token_limit_scope
                 .unwrap_or_default(),
-            model_max_output_tokens: config_profile
-                .model_max_output_tokens
-                .or(cfg.model_max_output_tokens),
+            model_max_output_tokens: cfg.model_max_output_tokens,
             model_provider_id,
             model_provider,
             cwd: resolved_cwd,
