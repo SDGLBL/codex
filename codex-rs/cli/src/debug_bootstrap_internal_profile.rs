@@ -31,12 +31,10 @@ pub fn run_debug_bootstrap_internal_profile_command(
     let result =
         bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url, cmd.model.as_deref())?;
 
-    if result.made_internal_default {
-        println!("Configured internal profile and set it as the default profile.");
+    if result.created_internal_profile {
+        println!("Configured internal profile. Run `codex --profile internal` to use it.");
     } else {
-        println!(
-            "Updated internal profile. Existing active profile was preserved; run `codex -p internal` to use it."
-        );
+        println!("Updated internal profile. Run `codex --profile internal` to use it.");
     }
 
     Ok(())
