@@ -20,9 +20,11 @@ from urllib.request import urlopen
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CODEX_CLI_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = CODEX_CLI_ROOT.parent
 DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
 VENDOR_DIR_NAME = "vendor"
-RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
+RG_MANIFEST = REPO_ROOT / "scripts" / "codex_package" / "rg"
+LEGACY_RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
 BINARY_TARGETS = (
     "x86_64-unknown-linux-musl",
     "aarch64-unknown-linux-musl",
@@ -195,7 +197,8 @@ def main() -> int:
     if "rg" in components:
         with _gha_group("Fetch ripgrep binaries"):
             print("Fetching ripgrep binaries...")
-            fetch_rg(vendor_dir, DEFAULT_RG_TARGETS, manifest_path=RG_MANIFEST)
+            manifest_path = RG_MANIFEST if RG_MANIFEST.exists() else LEGACY_RG_MANIFEST
+            fetch_rg(vendor_dir, DEFAULT_RG_TARGETS, manifest_path=manifest_path)
 
     print(f"Installed native dependencies into {vendor_dir}")
     return 0
