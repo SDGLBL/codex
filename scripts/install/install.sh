@@ -294,9 +294,14 @@ warn_if_crawl_url() {
 
 prompt_for_install_config() {
   has_internal_profile="false"
+  has_legacy_internal_profile="false"
   config_path="$HOME/.codex/config.toml"
-  if [ -f "$config_path" ] && grep -Eq '^[[:space:]]*\[profiles\.internal\][[:space:]]*$' "$config_path"; then
+  profile_config_path="$HOME/.codex/internal.config.toml"
+  if [ -f "$profile_config_path" ]; then
     has_internal_profile="true"
+  fi
+  if [ -f "$config_path" ] && grep -Eq '^[[:space:]]*\[profiles\.internal\][[:space:]]*$' "$config_path"; then
+    has_legacy_internal_profile="true"
   fi
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
@@ -322,6 +327,13 @@ prompt_for_install_config() {
   fi
 
   if [ "$has_internal_profile" = "true" ]; then
+    if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+      warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+    fi
+    return
+  fi
+
+  if [ "$has_legacy_internal_profile" = "true" ]; then
     if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
       warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     fi
@@ -511,22 +523,22 @@ add_to_path
 case "$path_action" in
   added)
     step "PATH updated for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
-    step "Or open a new terminal and run: codex"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
+    step "Or open a new terminal and run: codex --profile internal"
     ;;
   configured)
     step "PATH is already configured for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
-    step "Or open a new terminal and run: codex"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
+    step "Or open a new terminal and run: codex --profile internal"
     ;;
   manual)
     step "Could not update your shell profile automatically"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
     step "To persist it, add this line to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
   *)
     step "$INSTALL_DIR is already on PATH"
-    step "Run: codex"
+    step "Run: codex --profile internal"
     ;;
 esac
 
