@@ -97,6 +97,7 @@ fn assert_request_trace_matches(body: &serde_json::Value, expected_trace: &W3cTr
 struct WebsocketTestHarness {
     _codex_home: TempDir,
     client: ModelClient,
+    session_id: SessionId,
     thread_id: ThreadId,
     model_info: ModelInfo,
     effort: Option<ReasoningEffortConfig>,
@@ -2088,6 +2089,7 @@ async fn websocket_harness_with_provider_options(
     WebsocketTestHarness {
         _codex_home: codex_home,
         client,
+        session_id,
         thread_id,
         model_info,
         effort,
