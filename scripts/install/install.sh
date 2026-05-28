@@ -13,6 +13,7 @@ INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
 INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
+INSTALL_PROFILE="${CODEX_INSTALL_PROFILE:-}"
 SHOULD_BOOTSTRAP_INTERNAL_PROFILE="true"
 path_action="already"
 path_profile=""
@@ -292,16 +293,96 @@ warn_if_crawl_url() {
   esac
 }
 
-prompt_for_install_config() {
-  has_internal_profile="false"
-  has_legacy_internal_profile="false"
+validate_install_profile() {
+  case "$INSTALL_PROFILE" in
+    ""|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*)
+      echo "CODEX_INSTALL_PROFILE must be a plain profile name containing only letters, numbers, hyphens, and underscores." >&2
+      exit 1
+      ;;
+  esac
+}
+
+detect_legacy_profile_selector() {
   config_path="$HOME/.codex/config.toml"
-  profile_config_path="$HOME/.codex/internal.config.toml"
-  if [ -f "$profile_config_path" ]; then
-    has_internal_profile="true"
+  if [ ! -f "$config_path" ]; then
+    return
   fi
-  if [ -f "$config_path" ] && grep -Eq '^[[:space:]]*\[profiles\.internal\][[:space:]]*$' "$config_path"; then
-    has_legacy_internal_profile="true"
+
+  sed -n 's/^[[:space:]]*profile[[:space:]]*=[[:space:]]*"\([abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-][abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*\)"[[:space:]]*$/\1/p' "$config_path" | head -n 1
+}
+
+detect_single_profile_config() {
+  count=0
+  found_profile=""
+  for candidate in "$HOME/.codex"/*.config.toml; do
+    [ -f "$candidate" ] || continue
+    profile_name="${candidate##*/}"
+    profile_name="${profile_name%.config.toml}"
+    case "$profile_name" in
+      ""|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*)
+        continue
+        ;;
+    esac
+    count=$((count + 1))
+    found_profile="$profile_name"
+  done
+
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' "$found_profile"
+  fi
+}
+
+detect_single_legacy_profile_table() {
+  config_path="$HOME/.codex/config.toml"
+  if [ ! -f "$config_path" ]; then
+    return
+  fi
+
+  count=0
+  found_profile=""
+  for profile_name in $(sed -n 's/^[[:space:]]*\[profiles\.\([abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-][abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*\)\][[:space:]]*$/\1/p' "$config_path"); do
+    count=$((count + 1))
+    found_profile="$profile_name"
+  done
+
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' "$found_profile"
+  fi
+}
+
+resolve_install_profile() {
+  if [ -n "$INSTALL_PROFILE" ]; then
+    validate_install_profile
+    return
+  fi
+
+  INSTALL_PROFILE="$(detect_legacy_profile_selector)"
+  if [ -z "$INSTALL_PROFILE" ]; then
+    INSTALL_PROFILE="$(detect_single_profile_config)"
+  fi
+  if [ -z "$INSTALL_PROFILE" ]; then
+    INSTALL_PROFILE="$(detect_single_legacy_profile_table)"
+  fi
+  if [ -z "$INSTALL_PROFILE" ]; then
+    INSTALL_PROFILE="internal"
+  fi
+  validate_install_profile
+}
+
+prompt_for_install_config() {
+  resolve_install_profile
+  has_installer_profile="false"
+  has_legacy_installer_profile="false"
+  config_path="$HOME/.codex/config.toml"
+  profile_config_path="$HOME/.codex/$INSTALL_PROFILE.config.toml"
+  if [ -f "$profile_config_path" ]; then
+    has_installer_profile="true"
+  fi
+  if [ -f "$config_path" ] && {
+    grep -Eq "^[[:space:]]*profile[[:space:]]*=[[:space:]]*\"$INSTALL_PROFILE\"[[:space:]]*$" "$config_path" ||
+      grep -Eq "^[[:space:]]*\[profiles\.$INSTALL_PROFILE\][[:space:]]*$" "$config_path"
+  }; then
+    has_legacy_installer_profile="true"
   fi
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
@@ -316,7 +397,7 @@ prompt_for_install_config() {
     has_bootstrap_overrides="true"
   fi
 
-  if [ "$has_internal_profile" = "true" ] && [ "$has_bootstrap_overrides" = "false" ]; then
+  if [ "$has_installer_profile" = "true" ] && [ "$has_legacy_installer_profile" = "false" ] && [ "$has_bootstrap_overrides" = "false" ]; then
     SHOULD_BOOTSTRAP_INTERNAL_PROFILE="false"
     return
   fi
@@ -326,14 +407,14 @@ prompt_for_install_config() {
     return
   fi
 
-  if [ "$has_internal_profile" = "true" ]; then
+  if [ "$has_installer_profile" = "true" ]; then
     if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
       warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     fi
     return
   fi
 
-  if [ "$has_legacy_internal_profile" = "true" ]; then
+  if [ "$has_legacy_installer_profile" = "true" ]; then
     if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
       warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     fi
@@ -341,8 +422,8 @@ prompt_for_install_config() {
   fi
 
   if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
-    echo "When bootstrapping a new internal profile, non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
-    echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
+    echo "When bootstrapping a new $INSTALL_PROFILE profile, non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+    echo "  CODEX_INSTALL_PROFILE=$INSTALL_PROFILE CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
     exit 1
   fi
 
@@ -368,7 +449,7 @@ prompt_for_install_config() {
   fi
 
   if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
-    echo "A non-empty Azure base URL and ak are required to configure the internal profile." >&2
+    echo "A non-empty Azure base URL and ak are required to configure the $INSTALL_PROFILE profile." >&2
     exit 1
   fi
 
@@ -378,19 +459,19 @@ prompt_for_install_config() {
 run_internal_profile_bootstrap() {
   mkdir -p "$HOME/.codex"
   if [ -n "$INSTALL_MODEL" ]; then
-    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL"
+    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL" --profile "$INSTALL_PROFILE"
   else
-    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL"
+    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --profile "$INSTALL_PROFILE"
   fi
 }
 
 print_manual_bootstrap_hint() {
   if [ -n "$INSTALL_MODEL" ]; then
     echo "To complete configuration manually, rerun:" >&2
-    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --model \"$INSTALL_MODEL\"" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --model \"$INSTALL_MODEL\" --profile \"$INSTALL_PROFILE\"" >&2
   else
     echo "To complete configuration manually, rerun:" >&2
-    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\"" >&2
+    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --profile \"$INSTALL_PROFILE\"" >&2
   fi
 }
 
@@ -499,23 +580,23 @@ chmod 0755 "$INSTALL_DIR/rg"
 prompt_for_install_config
 
 if [ "$SHOULD_BOOTSTRAP_INTERNAL_PROFILE" = "true" ]; then
-  step "Configuring internal profile"
+  step "Configuring $INSTALL_PROFILE profile"
   if run_internal_profile_bootstrap; then
     :
   else
     bootstrap_exit="$?"
-    echo "Warning: failed to configure internal profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
+    echo "Warning: failed to configure $INSTALL_PROFILE profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
     if run_internal_profile_bootstrap; then
-      echo "Warning: internal profile bootstrap succeeded on retry." >&2
+      echo "Warning: $INSTALL_PROFILE profile bootstrap succeeded on retry." >&2
     else
       bootstrap_retry_exit="$?"
-      echo "Warning: failed to configure internal profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
-      echo "Warning: Codex CLI is installed, but internal profile setup did not complete." >&2
+      echo "Warning: failed to configure $INSTALL_PROFILE profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
+      echo "Warning: Codex CLI is installed, but $INSTALL_PROFILE profile setup did not complete." >&2
       print_manual_bootstrap_hint
     fi
   fi
 else
-  step "Skipping internal profile bootstrap (existing profile detected with no install overrides)"
+  step "Skipping $INSTALL_PROFILE profile bootstrap (existing profile detected with no install overrides)"
 fi
 
 add_to_path
@@ -523,22 +604,22 @@ add_to_path
 case "$path_action" in
   added)
     step "PATH updated for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
-    step "Or open a new terminal and run: codex --profile internal"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
+    step "Or open a new terminal and run: codex --profile $INSTALL_PROFILE"
     ;;
   configured)
     step "PATH is already configured for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
-    step "Or open a new terminal and run: codex --profile internal"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
+    step "Or open a new terminal and run: codex --profile $INSTALL_PROFILE"
     ;;
   manual)
     step "Could not update your shell profile automatically"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile internal"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
     step "To persist it, add this line to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
   *)
     step "$INSTALL_DIR is already on PATH"
-    step "Run: codex --profile internal"
+    step "Run: codex --profile $INSTALL_PROFILE"
     ;;
 esac
 
