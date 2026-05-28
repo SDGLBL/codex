@@ -5,6 +5,9 @@ use std::io::Read;
 
 use codex_core::config::bootstrap_internal_profile;
 use codex_core::config::find_codex_home;
+use codex_protocol::config_types::ProfileV2Name;
+
+const DEFAULT_INSTALL_PROFILE: &str = "internal";
 
 #[derive(Debug, Parser)]
 pub struct DebugBootstrapInternalProfileCommand {
@@ -16,6 +19,9 @@ pub struct DebugBootstrapInternalProfileCommand {
 
     #[arg(long = "model", value_name = "MODEL")]
     pub model: Option<String>,
+
+    #[arg(long = "profile", value_name = "PROFILE", default_value = DEFAULT_INSTALL_PROFILE)]
+    pub profile: ProfileV2Name,
 }
 
 pub fn run_debug_bootstrap_internal_profile_command(
@@ -28,13 +34,24 @@ pub fn run_debug_bootstrap_internal_profile_command(
     };
 
     let codex_home = find_codex_home()?;
-    let result =
-        bootstrap_internal_profile(&codex_home, &ak, &cmd.azure_base_url, cmd.model.as_deref())?;
+    let result = bootstrap_internal_profile(
+        &codex_home,
+        &cmd.profile,
+        &ak,
+        &cmd.azure_base_url,
+        cmd.model.as_deref(),
+    )?;
 
     if result.created_internal_profile {
-        println!("Configured internal profile. Run `codex --profile internal` to use it.");
+        println!(
+            "Configured {} profile. Run `codex --profile {}` to use it.",
+            cmd.profile, cmd.profile
+        );
     } else {
-        println!("Updated internal profile. Run `codex --profile internal` to use it.");
+        println!(
+            "Updated {} profile. Run `codex --profile {}` to use it.",
+            cmd.profile, cmd.profile
+        );
     }
 
     Ok(())
