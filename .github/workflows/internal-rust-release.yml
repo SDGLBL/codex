@@ -229,9 +229,10 @@ jobs:
           target="${{ matrix.target }}"
           if [[ "${target}" == *"-linux-"* ]]; then
             # Keep the hosted Linux runners under their memory ceiling during late release linking.
-            export CARGO_PROFILE_RELEASE_LTO=thin
-            cargo build --locked --target "${target}" --release --jobs 2 --bin codex-responses-api-proxy
-            cargo build --locked --target "${target}" --release --jobs 2 --bin codex
+            export CARGO_PROFILE_RELEASE_LTO=false
+            export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+            cargo build --locked --target "${target}" --release --jobs 1 --bin codex-responses-api-proxy
+            cargo build --locked --target "${target}" --release --jobs 1 --bin codex
           else
             cargo build --locked --target "${target}" --release --bin codex --bin codex-responses-api-proxy
           fi
