@@ -14,6 +14,7 @@ INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
 INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
 INSTALL_PROFILE="${CODEX_INSTALL_PROFILE:-}"
+CODEX_RUN_COMMAND=""
 SHOULD_BOOTSTRAP_INTERNAL_PROFILE="true"
 path_action="already"
 path_profile=""
@@ -350,6 +351,11 @@ detect_single_legacy_profile_table() {
   fi
 }
 
+config_file_has_settings() {
+  [ -f "$1" ] || return 1
+  grep -Eq '^[[:space:]]*[^#[:space:]]' "$1"
+}
+
 resolve_install_profile() {
   if [ -n "$INSTALL_PROFILE" ]; then
     validate_install_profile
@@ -383,6 +389,11 @@ prompt_for_install_config() {
       grep -Eq "^[[:space:]]*\[profiles\.$INSTALL_PROFILE\][[:space:]]*$" "$config_path"
   }; then
     has_legacy_installer_profile="true"
+  fi
+  if [ "$INSTALL_PROFILE" = "internal" ] && [ "$has_installer_profile" = "false" ] && [ "$has_legacy_installer_profile" = "false" ] && ! config_file_has_settings "$config_path"; then
+    CODEX_RUN_COMMAND="codex"
+  else
+    CODEX_RUN_COMMAND="codex --profile $INSTALL_PROFILE"
   fi
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
@@ -604,22 +615,22 @@ add_to_path
 case "$path_action" in
   added)
     step "PATH updated for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
-    step "Or open a new terminal and run: codex --profile $INSTALL_PROFILE"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && $CODEX_RUN_COMMAND"
+    step "Or open a new terminal and run: $CODEX_RUN_COMMAND"
     ;;
   configured)
     step "PATH is already configured for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
-    step "Or open a new terminal and run: codex --profile $INSTALL_PROFILE"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && $CODEX_RUN_COMMAND"
+    step "Or open a new terminal and run: $CODEX_RUN_COMMAND"
     ;;
   manual)
     step "Could not update your shell profile automatically"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex --profile $INSTALL_PROFILE"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && $CODEX_RUN_COMMAND"
     step "To persist it, add this line to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
   *)
     step "$INSTALL_DIR is already on PATH"
-    step "Run: codex --profile $INSTALL_PROFILE"
+    step "Run: $CODEX_RUN_COMMAND"
     ;;
 esac
 
