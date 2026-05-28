@@ -366,6 +366,30 @@ fn assert_installed_binary_loads_profile(
     );
 }
 
+fn assert_installed_binary_loads_default_config(home: &Path, install_dir: &Path) -> Result<()> {
+    let output = Command::new(install_dir.join("codex"))
+        .arg("debug")
+        .arg("prompt-input")
+        .arg("smoke")
+        .env("HOME", home)
+        .env("CODEX_HOME", home.join(".codex"))
+        .env(
+            "PATH",
+            format!("{}:{}", install_dir.display(), base_test_path()),
+        )
+        .output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "installed codex failed to load default config: status={:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Result<()> {
     let platform = PlatformFixture {
@@ -386,9 +410,9 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         /*extra_path_prefix*/ None,
     )?;
     assert!(stdout.contains(platform.platform_label));
-    assert!(
-        stdout.contains("Configured internal profile. Run `codex --profile internal` to use it.")
-    );
+    assert!(stdout.contains("Configured Codex to use internal defaults. Run `codex` to use it."));
+    assert!(stdout.contains("Run now: export PATH="));
+    assert!(stdout.contains("&& codex\n"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
@@ -396,22 +420,18 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert!(home.path().join(".profile").is_file());
 
     let config = read_installed_config(home.path())?;
-    let internal_config = read_installed_internal_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
         None
     );
     assert_eq!(
-        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(INSTALL_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(
-            &internal_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
         Some(INSTALL_AK)
     );
     assert_eq!(
@@ -419,9 +439,15 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         None
     );
     assert_eq!(value_at_path(&config, &["tui", "status_line"]), None);
-    assert_eq!(value_at_path(&internal_config, &["features"]), None);
+    assert!(
+        !home
+            .path()
+            .join(".codex")
+            .join("internal.config.toml")
+            .exists()
+    );
 
-    assert_installed_binary_loads_profile(home.path(), &install_dir, "internal")?;
+    assert_installed_binary_loads_default_config(home.path(), &install_dir)?;
     Ok(())
 }
 
@@ -700,10 +726,17 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
         Some("gpt-5.4"),
     )?;
 
-    let config = read_installed_internal_config(home.path())?;
+    let config = read_installed_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4")
+    );
+    assert!(
+        !home
+            .path()
+            .join(".codex")
+            .join("internal.config.toml")
+            .exists()
     );
 
     Ok(())

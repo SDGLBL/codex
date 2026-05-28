@@ -46,33 +46,29 @@ async fn debug_bootstrap_internal_profile_creates_internal_profile() -> Result<(
     .assert()
     .success()
     .stdout(contains(
-        "Configured internal profile. Run `codex --profile internal` to use it.",
+        "Configured Codex to use internal defaults. Run `codex` to use it.",
     ));
 
     let config = read_config(codex_home.path(), "config.toml")?;
-    let internal_config = read_config(codex_home.path(), "internal.config.toml")?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
         None
     );
     assert_eq!(
-        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(TEST_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(
-            &internal_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
         Some("secret-ak")
     );
     assert_eq!(
-        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
     );
-    assert_eq!(value_at_path(&internal_config, &["features"]), None);
+    assert!(!codex_home.path().join("internal.config.toml").exists());
 
     Ok(())
 }
@@ -145,11 +141,12 @@ async fn debug_bootstrap_internal_profile_accepts_model_override() -> Result<()>
     .assert()
     .success();
 
-    let config = read_config(codex_home.path(), "internal.config.toml")?;
+    let config = read_config(codex_home.path(), "config.toml")?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some(TEST_MODEL)
     );
+    assert!(!codex_home.path().join("internal.config.toml").exists());
 
     Ok(())
 }

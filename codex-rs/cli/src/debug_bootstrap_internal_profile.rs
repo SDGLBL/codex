@@ -42,7 +42,9 @@ pub fn run_debug_bootstrap_internal_profile_command(
         cmd.model.as_deref(),
     )?;
 
-    if result.created_internal_profile {
+    if result.configured_base_config {
+        println!("Configured Codex to use internal defaults. Run `codex` to use it.");
+    } else if result.created_internal_profile {
         println!(
             "Configured {} profile. Run `codex --profile {}` to use it.",
             cmd.profile, cmd.profile
