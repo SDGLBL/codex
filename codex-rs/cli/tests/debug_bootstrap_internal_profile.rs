@@ -155,6 +155,67 @@ async fn debug_bootstrap_internal_profile_accepts_model_override() -> Result<()>
 }
 
 #[tokio::test]
+async fn debug_bootstrap_internal_profile_accepts_profile_override() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        r#"
+profile = "aidp"
+
+[profiles.aidp]
+model = "existing-aidp-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-aidp-ak"
+"#,
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "debug",
+        "bootstrap-internal-profile",
+        "--ak-stdin",
+        "--azure-base-url",
+        "",
+        "--profile",
+        "aidp",
+    ])
+    .write_stdin("\n")
+    .assert()
+    .success()
+    .stdout(contains(
+        "Updated aidp profile. Run `codex --profile aidp` to use it.",
+    ));
+
+    let config = read_config(codex_home.path(), "config.toml")?;
+    let aidp_config = read_config(codex_home.path(), "aidp.config.toml")?;
+    assert_eq!(value_at_path(&config, &["profile"]), None);
+    assert_eq!(value_at_path(&config, &["profiles", "aidp"]), None);
+    assert_eq!(
+        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
+        Some("existing-aidp-model")
+    );
+    assert_eq!(
+        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(
+            &aidp_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
+        Some("existing-aidp-ak")
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn debug_bootstrap_internal_profile_allows_empty_values_when_internal_exists() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(

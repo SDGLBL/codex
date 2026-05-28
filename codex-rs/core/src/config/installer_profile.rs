@@ -11,7 +11,6 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::resolve_profile_v2_config_path;
 
-const INTERNAL_PROFILE_NAME: &str = "internal";
 pub const DEFAULT_INTERNAL_PROFILE_MODEL: &str = "gpt-5.4-2026-03-05";
 const AZURE_PROVIDER_ID: &str = "azure";
 const AZURE_API_VERSION: &str = "2025-04-01-preview";
@@ -23,6 +22,7 @@ pub struct BootstrapInternalProfileResult {
 
 pub fn bootstrap_internal_profile(
     codex_home: &Path,
+    profile_name: &ProfileV2Name,
     ak: &str,
     azure_base_url: &str,
     model: Option<&str>,
@@ -39,7 +39,7 @@ pub fn bootstrap_internal_profile(
         toml::from_str::<TomlValue>(&serialized)
             .with_context(|| format!("failed to parse config at {}", config_path.display()))?
     };
-    let profile_config_path = internal_profile_config_path(codex_home)?;
+    let profile_config_path = profile_config_path(codex_home, profile_name);
     let profile_serialized = match std::fs::read_to_string(profile_config_path.as_path()) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -56,13 +56,17 @@ pub fn bootstrap_internal_profile(
         })?
     };
 
-    let internal_profile_exists = !profile_serialized.is_empty()
-        || has_path(&base_existing, &["profiles", INTERNAL_PROFILE_NAME]);
+    let legacy_profile_is_selected = value_at_path(&base_existing, &["profile"])
+        .and_then(TomlValue::as_str)
+        .is_some_and(|profile| profile == profile_name.as_str());
+    let profile_exists = !profile_serialized.is_empty()
+        || legacy_profile_is_selected
+        || has_path(&base_existing, &["profiles", profile_name.as_str()]);
 
     let configs = [&profile_existing, &base_existing];
-    let ak = resolve_ak(ak, &configs, internal_profile_exists)?;
-    let azure_base_url = resolve_azure_base_url(azure_base_url, &configs, internal_profile_exists)?;
-    let model = resolve_model(model, &configs, internal_profile_exists);
+    let ak = resolve_ak(ak, &configs, profile_exists)?;
+    let azure_base_url = resolve_azure_base_url(azure_base_url, &configs, profile_exists)?;
+    let model = resolve_model(model, &configs, profile_exists, profile_name.as_str());
 
     ConfigEditsBuilder::for_config_path(profile_config_path.as_path())
         .with_edits(installer_owned_edits(ak, azure_base_url, model))
@@ -70,14 +74,14 @@ pub fn bootstrap_internal_profile(
 
     let mut edits = missing_global_default_edits(&base_existing);
     edits.push(clear_path(&["profile"]));
-    edits.push(clear_path(&["profiles", INTERNAL_PROFILE_NAME]));
+    edits.push(clear_path(&["profiles", profile_name.as_str()]));
 
     ConfigEditsBuilder::new(codex_home)
         .with_edits(edits)
         .apply_blocking()?;
 
     Ok(BootstrapInternalProfileResult {
-        created_internal_profile: !internal_profile_exists,
+        created_internal_profile: !profile_exists,
     })
 }
 
@@ -160,11 +164,11 @@ fn installer_owned_edits(ak: &str, azure_base_url: &str, model: &str) -> Vec<Con
     edits
 }
 
-fn internal_profile_config_path(
+fn profile_config_path(
     codex_home: &Path,
-) -> anyhow::Result<codex_utils_absolute_path::AbsolutePathBuf> {
-    let profile_name: ProfileV2Name = INTERNAL_PROFILE_NAME.parse()?;
-    Ok(resolve_profile_v2_config_path(codex_home, &profile_name))
+    profile_name: &ProfileV2Name,
+) -> codex_utils_absolute_path::AbsolutePathBuf {
+    resolve_profile_v2_config_path(codex_home, profile_name)
 }
 
 fn missing_global_default_edits(existing: &TomlValue) -> Vec<ConfigEdit> {
@@ -203,14 +207,14 @@ fn missing_global_default_edits(existing: &TomlValue) -> Vec<ConfigEdit> {
 fn resolve_ak<'a>(
     input_ak: &'a str,
     configs: &[&'a TomlValue],
-    internal_profile_exists: bool,
+    profile_exists: bool,
 ) -> anyhow::Result<&'a str> {
     let input_ak = input_ak.trim();
     if !input_ak.is_empty() {
         return Ok(input_ak);
     }
 
-    if internal_profile_exists
+    if profile_exists
         && let Some(existing_ak) = first_non_empty_string(
             configs,
             &["model_providers", AZURE_PROVIDER_ID, "query_params", "ak"],
@@ -225,14 +229,14 @@ fn resolve_ak<'a>(
 fn resolve_azure_base_url<'a>(
     input_azure_base_url: &'a str,
     configs: &[&'a TomlValue],
-    internal_profile_exists: bool,
+    profile_exists: bool,
 ) -> anyhow::Result<&'a str> {
     let input_azure_base_url = input_azure_base_url.trim();
     if !input_azure_base_url.is_empty() {
         return Ok(input_azure_base_url);
     }
 
-    if internal_profile_exists
+    if profile_exists
         && let Some(existing_azure_base_url) =
             first_non_empty_string(configs, &["model_providers", AZURE_PROVIDER_ID, "base_url"])
     {
@@ -245,7 +249,8 @@ fn resolve_azure_base_url<'a>(
 fn resolve_model<'a>(
     input_model: Option<&'a str>,
     configs: &[&'a TomlValue],
-    internal_profile_exists: bool,
+    profile_exists: bool,
+    profile_name: &str,
 ) -> &'a str {
     if let Some(input_model) = input_model
         .map(str::trim)
@@ -254,10 +259,9 @@ fn resolve_model<'a>(
         return input_model;
     }
 
-    if internal_profile_exists
-        && let Some(existing_model) = first_non_empty_string(configs, &["model"]).or_else(|| {
-            first_non_empty_string(configs, &["profiles", INTERNAL_PROFILE_NAME, "model"])
-        })
+    if profile_exists
+        && let Some(existing_model) = first_non_empty_string(configs, &["model"])
+            .or_else(|| first_non_empty_string(configs, &["profiles", profile_name, "model"]))
     {
         return existing_model;
     }
@@ -324,6 +328,13 @@ mod tests {
     use tempfile::TempDir;
 
     const TEST_AZURE_BASE_URL: &str = "https://internal.example.test/openapi";
+    const INTERNAL_PROFILE_NAME: &str = "internal";
+
+    fn internal_profile_name() -> ProfileV2Name {
+        INTERNAL_PROFILE_NAME
+            .parse()
+            .expect("internal is a valid profile-v2 name")
+    }
 
     fn read_config(codex_home: &TempDir) -> anyhow::Result<String> {
         Ok(std::fs::read_to_string(
@@ -332,25 +343,40 @@ mod tests {
     }
 
     fn read_internal_profile_config(codex_home: &TempDir) -> anyhow::Result<String> {
-        let config_path = internal_profile_config_path(codex_home.path())?;
+        let config_path = profile_config_path(codex_home.path(), &internal_profile_name());
         Ok(std::fs::read_to_string(config_path.as_path())?)
     }
 
     fn internal_profile_loader_overrides(codex_home: &TempDir) -> anyhow::Result<LoaderOverrides> {
-        let profile_name: ProfileV2Name = INTERNAL_PROFILE_NAME.parse()?;
+        let profile_name = internal_profile_name();
         Ok(LoaderOverrides {
-            user_config_path: Some(internal_profile_config_path(codex_home.path())?),
+            user_config_path: Some(profile_config_path(codex_home.path(), &profile_name)),
             user_config_profile: Some(profile_name),
             ..LoaderOverrides::without_managed_config_for_tests()
         })
+    }
+
+    fn bootstrap_internal_profile_for_tests(
+        codex_home: &TempDir,
+        ak: &str,
+        azure_base_url: &str,
+        model: Option<&str>,
+    ) -> anyhow::Result<BootstrapInternalProfileResult> {
+        bootstrap_internal_profile(
+            codex_home.path(),
+            &internal_profile_name(),
+            ak,
+            azure_base_url,
+            model,
+        )
     }
 
     #[tokio::test]
     async fn bootstrap_internal_profile_creates_internal_defaults() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        let result = bootstrap_internal_profile(
-            codex_home.path(),
+        let result = bootstrap_internal_profile_for_tests(
+            &codex_home,
             "first-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
@@ -430,8 +456,8 @@ multi_agent = false
 "#,
         )?;
 
-        let result = bootstrap_internal_profile(
-            codex_home.path(),
+        let result = bootstrap_internal_profile_for_tests(
+            &codex_home,
             "second-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
@@ -475,14 +501,14 @@ multi_agent = false
     fn bootstrap_internal_profile_updates_ak_idempotently() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "old-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "new-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
@@ -491,8 +517,8 @@ multi_agent = false
         assert!(after_update.contains("ak = \"new-ak\""));
         assert!(!after_update.contains("ak = \"old-ak\""));
 
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "new-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
@@ -507,14 +533,14 @@ multi_agent = false
     fn bootstrap_internal_profile_updates_model_idempotently() -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "same-ak",
             TEST_AZURE_BASE_URL,
             Some(DEFAULT_INTERNAL_PROFILE_MODEL),
         )?;
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "same-ak",
             TEST_AZURE_BASE_URL,
             Some("gpt-5.4"),
@@ -523,8 +549,8 @@ multi_agent = false
         assert!(after_update.contains("model = \"gpt-5.4\""));
         assert!(!after_update.contains("model = \"gpt-5.4-2026-03-05\""));
 
-        bootstrap_internal_profile(
-            codex_home.path(),
+        bootstrap_internal_profile_for_tests(
+            &codex_home,
             "same-ak",
             TEST_AZURE_BASE_URL,
             Some("gpt-5.4"),
@@ -555,7 +581,7 @@ ak = "existing-ak"
 "#,
         )?;
 
-        bootstrap_internal_profile(codex_home.path(), "", "", None)?;
+        bootstrap_internal_profile_for_tests(&codex_home, "", "", None)?;
 
         let config = toml::from_str::<TomlValue>(&read_config(&codex_home)?)?;
         let profile_config =
@@ -588,7 +614,7 @@ ak = "existing-ak"
     -> anyhow::Result<()> {
         let codex_home = TempDir::new()?;
 
-        bootstrap_internal_profile(codex_home.path(), "ak", TEST_AZURE_BASE_URL, None)?;
+        bootstrap_internal_profile_for_tests(&codex_home, "ak", TEST_AZURE_BASE_URL, None)?;
 
         let config = toml::from_str::<TomlValue>(&read_internal_profile_config(&codex_home)?)?;
         assert_eq!(
