@@ -48,6 +48,13 @@ fn base_test_path() -> String {
     "/usr/bin:/bin:/usr/sbin:/sbin".to_string()
 }
 
+fn sanitize_installer_env(command: &mut Command) {
+    for (key, _) in std::env::vars().filter(|(key, _)| key.starts_with("CODEX_INSTALL_")) {
+        command.env_remove(key);
+    }
+    command.env_remove("CODEX_HOME");
+}
+
 fn create_release_fixture_with_codex(
     root: &Path,
     platform: &PlatformFixture<'_>,
@@ -142,6 +149,7 @@ fn run_installer_with_model(
         extra_path_prefix,
         "/bin/sh",
         install_model,
+        /*install_profile*/ None,
     )
 }
 
@@ -152,6 +160,7 @@ fn run_installer_with_shell(
     extra_path_prefix: Option<&Path>,
     shell: &str,
     install_model: Option<&str>,
+    install_profile: Option<&str>,
 ) -> Result<String> {
     let mut path = base_test_path();
     if let Some(prefix) = extra_path_prefix {
@@ -159,6 +168,7 @@ fn run_installer_with_shell(
     }
 
     let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
     command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
@@ -172,6 +182,9 @@ fn run_installer_with_shell(
         .env("PATH", path);
     if let Some(install_model) = install_model {
         command.env("CODEX_INSTALL_MODEL", install_model);
+    }
+    if let Some(install_profile) = install_profile {
+        command.env("CODEX_INSTALL_PROFILE", install_profile);
     }
     if let Some(proc_translated) = platform.proc_translated {
         command.env("CODEX_INSTALL_PROC_TRANSLATED", proc_translated);
@@ -196,7 +209,9 @@ fn run_installer_with_release_tag(
     platform: &PlatformFixture<'_>,
     release_tag: &str,
 ) -> Result<String> {
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg("latest")
         .env("HOME", home)
@@ -235,7 +250,9 @@ fn run_installer_latest(
         path = format!("{}:{path}", prefix.display());
     }
 
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .env("HOME", home)
         .env("SHELL", "/bin/sh")
@@ -266,7 +283,9 @@ fn run_installer_failure(
     release_base_url: &str,
     platform: &PlatformFixture<'_>,
 ) -> Result<(String, String)> {
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home)
@@ -317,10 +336,14 @@ fn value_at_path<'a>(value: &'a TomlValue, segments: &[&str]) -> Option<&'a Toml
     Some(current)
 }
 
-fn assert_installed_binary_loads_internal_profile(home: &Path, install_dir: &Path) -> Result<()> {
+fn assert_installed_binary_loads_profile(
+    home: &Path,
+    install_dir: &Path,
+    profile: &str,
+) -> Result<()> {
     let output = Command::new(install_dir.join("codex"))
         .arg("--profile")
-        .arg("internal")
+        .arg(profile)
         .arg("debug")
         .arg("prompt-input")
         .arg("smoke")
@@ -336,7 +359,7 @@ fn assert_installed_binary_loads_internal_profile(home: &Path, install_dir: &Pat
     }
 
     anyhow::bail!(
-        "installed codex failed to load internal profile: status={:?}\nstdout:\n{}\nstderr:\n{}",
+        "installed codex failed to load {profile} profile: status={:?}\nstdout:\n{}\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
@@ -398,7 +421,7 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert_eq!(value_at_path(&config, &["tui", "status_line"]), None);
     assert_eq!(value_at_path(&internal_config, &["features"]), None);
 
-    assert_installed_binary_loads_internal_profile(home.path(), &install_dir)?;
+    assert_installed_binary_loads_profile(home.path(), &install_dir, "internal")?;
     Ok(())
 }
 
@@ -642,6 +665,7 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
         /*extra_path_prefix*/ None,
         "/bin/zsh",
         /*install_model*/ None,
+        /*install_profile*/ None,
     )?;
 
     let zprofile_path = home.path().join(".zprofile");
@@ -715,7 +739,9 @@ ak = "existing-ak"
     )?;
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
 
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home.path())
@@ -756,6 +782,91 @@ ak = "existing-ak"
     );
     assert_eq!(value_at_path(&config, &["profile"]), None);
     assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
+
+    Ok(())
+}
+
+#[test]
+fn install_script_migrates_selected_legacy_profile_name() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let codex_home = home.path().join(".codex");
+    fs::create_dir_all(&codex_home)?;
+    fs::write(
+        codex_home.join("config.toml"),
+        r#"
+profile = "aidp"
+
+[profiles.aidp]
+model = "existing-aidp-model"
+
+[model_providers.azure]
+base_url = "https://existing-aidp.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-aidp-ak"
+"#,
+    )?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.contains("Configuring aidp profile"));
+    assert!(stdout.contains("Updated aidp profile. Run `codex --profile aidp` to use it."));
+    assert!(stdout.contains("codex --profile aidp"));
+
+    let config = read_installed_config(home.path())?;
+    let aidp_config = read_installed_config_file(home.path(), "aidp.config.toml")?;
+    assert_eq!(value_at_path(&config, &["profile"]), None);
+    assert_eq!(value_at_path(&config, &["profiles", "aidp"]), None);
+    assert_eq!(
+        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
+        Some("existing-aidp-model")
+    );
+    assert_eq!(
+        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing-aidp.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(
+            &aidp_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
+        Some("existing-aidp-ak")
+    );
+
+    let install_dir = home.path().join(".local").join("bin");
+    assert_installed_binary_loads_profile(home.path(), &install_dir, "aidp")?;
 
     Ok(())
 }
@@ -802,7 +913,9 @@ ak = "existing-ak"
         INSTALL_TAG,
     )?;
 
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home.path())
@@ -880,7 +993,9 @@ ak = "existing-ak"
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
     let crawl_url = "https://example.test/gpt/openapi/v2/crawl";
 
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home.path())
@@ -953,7 +1068,9 @@ fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
         INSTALL_TAG,
     )?;
 
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
         .arg(installer_script_path()?)
         .arg(INSTALL_VERSION)
         .env("HOME", home.path())
