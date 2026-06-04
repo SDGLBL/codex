@@ -390,11 +390,18 @@ impl ContextManager {
                 call_id,
                 name,
                 output,
-            } => ResponseItem::CustomToolCallOutput {
-                call_id: call_id.clone(),
-                name: name.clone(),
-                output: truncate_function_output_payload(output, policy_with_serialization_budget),
-            },
+            } => {
+                let output = if self.is_code_mode_exec_output(call_id, name.as_deref()) {
+                    output.clone()
+                } else {
+                    truncate_function_output_payload(output, policy_with_serialization_budget)
+                };
+                ResponseItem::CustomToolCallOutput {
+                    call_id: call_id.clone(),
+                    name: name.clone(),
+                    output,
+                }
+            }
             ResponseItem::Message { .. }
             | ResponseItem::Reasoning { .. }
             | ResponseItem::LocalShellCall { .. }
@@ -456,6 +463,25 @@ impl ContextManager {
             }
         }
         cut_idx
+    }
+
+    fn is_code_mode_exec_output(&self, call_id: &str, output_name: Option<&str>) -> bool {
+        const CODE_MODE_EXEC_TOOL_NAME: &str = "exec";
+
+        if output_name == Some(CODE_MODE_EXEC_TOOL_NAME) {
+            return true;
+        }
+
+        self.items.iter().rev().any(|item| {
+            matches!(
+                item,
+                ResponseItem::CustomToolCall {
+                    call_id: custom_call_id,
+                    name,
+                    ..
+                } if custom_call_id == call_id && name == CODE_MODE_EXEC_TOOL_NAME
+            )
+        })
     }
 }
 
