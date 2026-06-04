@@ -485,7 +485,7 @@ impl Session {
         state
             .session_configuration
             .wire_session_id
-            .unwrap_or(self.conversation_id)
+            .unwrap_or(self.thread_id)
     }
 
     #[instrument(name = "session_init", level = "info", skip_all)]
