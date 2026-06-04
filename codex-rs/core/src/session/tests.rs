@@ -3663,6 +3663,7 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
         CreateThreadParams {
             thread_id: session.thread_id,
             extra_config: None,
+            wire_session_id: session.thread_id,
             forked_from_id: None,
             parent_thread_id: None,
             source: SessionSource::Exec,
@@ -6429,6 +6430,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
         CreateThreadParams {
             thread_id: session.thread_id,
             extra_config: None,
+            wire_session_id: session.thread_id,
             forked_from_id: None,
             parent_thread_id: None,
             source: SessionSource::Exec,

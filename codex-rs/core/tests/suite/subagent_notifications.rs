@@ -18,7 +18,6 @@ use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::ev_tool_search_call;
@@ -982,7 +981,12 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-turn1-1"),
-            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V1_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
             ev_completed("resp-turn1-1"),
         ]),
     )
@@ -1074,10 +1078,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
     let resumed = resume_builder
         .resume(&server, test.home.clone(), child_rollout_path)
         .await?;
-    assert_eq!(
-        resumed.session_configured.session_id.to_string(),
-        spawned_id
-    );
+    assert_eq!(resumed.session_configured.thread_id.to_string(), spawned_id);
 
     resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
 
