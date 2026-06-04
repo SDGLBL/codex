@@ -2732,6 +2732,17 @@ impl ThreadRequestProcessor {
                 )));
             }
             None
+        } else if let Ok(existing_thread_id) = ThreadId::from_string(&params.thread_id)
+            && let Ok(existing_thread) = self.thread_manager.get_thread(existing_thread_id).await
+        {
+            let source_thread = self
+                .read_stored_thread_for_resume(
+                    &params.thread_id,
+                    /*path*/ None,
+                    /*include_history*/ true,
+                )
+                .await?;
+            Some((existing_thread_id, existing_thread, source_thread))
         } else if params.path.is_some() {
             let source_thread = self
                 .read_stored_thread_for_resume(
@@ -2757,17 +2768,6 @@ impl ThreadRequestProcessor {
             } else {
                 None
             }
-        } else if let Ok(existing_thread_id) = ThreadId::from_string(&params.thread_id)
-            && let Ok(existing_thread) = self.thread_manager.get_thread(existing_thread_id).await
-        {
-            let source_thread = self
-                .read_stored_thread_for_resume(
-                    &params.thread_id,
-                    /*path*/ None,
-                    /*include_history*/ true,
-                )
-                .await?;
-            Some((existing_thread_id, existing_thread, source_thread))
         } else {
             let source_thread = self
                 .read_stored_thread_for_resume(
