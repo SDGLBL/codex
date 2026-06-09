@@ -148,14 +148,22 @@ fn derive_exec_args() {
 
 #[tokio::test]
 async fn test_current_shell_detects_zsh() {
-    let Some(shell_path) = get_user_shell_path() else {
-        return;
-    };
+    let shell = Command::new("sh")
+        .arg("-c")
+        .arg("echo $SHELL")
+        .output()
+        .unwrap();
 
-    if detect_shell_type(&shell_path) == Some(ShellType::Zsh)
-        && let Some(expected_shell) = get_shell(ShellType::Zsh, /*path*/ None)
-    {
-        assert_eq!(default_user_shell(), expected_shell);
+    let shell_path = String::from_utf8_lossy(&shell.stdout).trim().to_string();
+    if shell_path.ends_with("/zsh") {
+        assert_eq!(
+            default_user_shell(),
+            Shell {
+                shell_type: ShellType::Zsh,
+                shell_path: PathBuf::from(shell_path),
+                shell_snapshot: empty_shell_snapshot_receiver(),
+            }
+        );
     }
 }
 

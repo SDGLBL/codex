@@ -7,6 +7,8 @@ use crate::session::session::SessionSettingsUpdate;
 use crate::session::tests::make_session_and_context;
 use crate::tasks::InterruptedTurnHistoryMarker;
 use crate::tasks::interrupted_turn_history_marker;
+use codex_app_server_protocol::JSONRPCMessage;
+use codex_app_server_protocol::JSONRPCResponse;
 use codex_extension_api::empty_extension_registry;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_protocol::models::ContentItem;
@@ -25,12 +27,103 @@ use codex_protocol::user_input::UserInput;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::responses::mount_models_once;
+use futures::SinkExt;
+use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tempfile::tempdir;
+use tokio::net::TcpListener;
+use tokio::time::timeout;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::Message;
 use wiremock::MockServer;
 
 const TEST_INSTALLATION_ID: &str = "11111111-1111-4111-8111-111111111111";
+
+async fn start_exec_server_info_mock() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind exec-server mock");
+    let url = format!("ws://{}", listener.local_addr().expect("listener addr"));
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("mock accepts connection");
+        let mut websocket = accept_async(stream).await.expect("websocket handshake");
+        let initialize = read_jsonrpc_websocket(&mut websocket).await;
+        let request = match initialize {
+            JSONRPCMessage::Request(request) if request.method == "initialize" => request,
+            other => panic!("expected initialize request, got {other:?}"),
+        };
+        write_jsonrpc_websocket(
+            &mut websocket,
+            JSONRPCMessage::Response(JSONRPCResponse {
+                id: request.id,
+                result: serde_json::json!({ "sessionId": "test-dev-environment" }),
+            }),
+        )
+        .await;
+
+        let initialized = read_jsonrpc_websocket(&mut websocket).await;
+        match initialized {
+            JSONRPCMessage::Notification(notification) if notification.method == "initialized" => {}
+            other => panic!("expected initialized notification, got {other:?}"),
+        }
+
+        let environment_info = read_jsonrpc_websocket(&mut websocket).await;
+        let request = match environment_info {
+            JSONRPCMessage::Request(request) if request.method == "environment/info" => request,
+            other => panic!("expected environment/info request, got {other:?}"),
+        };
+        write_jsonrpc_websocket(
+            &mut websocket,
+            JSONRPCMessage::Response(JSONRPCResponse {
+                id: request.id,
+                result: serde_json::json!({
+                    "shell": {
+                        "name": "bash",
+                        "path": "/bin/bash",
+                    },
+                }),
+            }),
+        )
+        .await;
+    });
+    url
+}
+
+async fn read_jsonrpc_websocket(
+    websocket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+) -> JSONRPCMessage {
+    loop {
+        match timeout(Duration::from_secs(1), websocket.next())
+            .await
+            .expect("json-rpc websocket read should not time out")
+            .expect("websocket should stay open")
+            .expect("websocket frame should read")
+        {
+            Message::Text(text) => {
+                return serde_json::from_str(text.as_ref())
+                    .expect("json-rpc text frame should parse");
+            }
+            Message::Binary(bytes) => {
+                return serde_json::from_slice(bytes.as_ref())
+                    .expect("json-rpc binary frame should parse");
+            }
+            Message::Ping(_) | Message::Pong(_) => {}
+            other => panic!("expected json-rpc websocket frame, got {other:?}"),
+        }
+    }
+}
+
+async fn write_jsonrpc_websocket(
+    websocket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    message: JSONRPCMessage,
+) {
+    let encoded = serde_json::to_string(&message).expect("json-rpc should serialize");
+    websocket
+        .send(Message::Text(encoded.into()))
+        .await
+        .expect("json-rpc websocket frame should write");
+}
 
 fn user_msg(text: &str) -> ResponseItem {
     ResponseItem::Message {
@@ -350,16 +443,18 @@ async fn start_thread_uses_all_default_environments_from_codex_home() {
     config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    let dev_environment_url = start_exec_server_info_mock().await;
     std::fs::write(
         config.codex_home.join("environments.toml"),
-        r#"
+        format!(
+            r#"
 default = "dev"
 
 [[environments]]
 id = "dev"
-program = "ssh"
-args = ["dev", "cd /tmp && true"]
+url = "{dev_environment_url}"
 "#,
+        ),
     )
     .expect("write environments.toml");
 

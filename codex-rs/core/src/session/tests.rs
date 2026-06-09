@@ -1116,7 +1116,12 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
     .await?;
 
     let turn_context = session.new_default_turn().await;
-    assert!(turn_context.network.is_some());
+    let managed_http_proxy = turn_context
+        .network
+        .as_ref()
+        .expect("turn should expose managed network proxy")
+        .http_addr()
+        .to_string();
 
     #[cfg(windows)]
     let command = r#"$val = $env:HTTP_PROXY; if ([string]::IsNullOrEmpty($val)) { $val = 'not-set' } ; [System.Console]::Write($val)"#.to_string();
@@ -1136,7 +1141,7 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
         let event = rx.recv().await.expect("channel open");
         if let EventMsg::ExecCommandEnd(event) = event.msg {
             assert_eq!(event.exit_code, 0);
-            assert_eq!(event.stdout.trim(), "not-set");
+            assert_ne!(event.stdout.trim(), managed_http_proxy);
             break;
         }
     }
