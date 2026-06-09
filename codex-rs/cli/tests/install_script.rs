@@ -643,7 +643,15 @@ fn install_script_reuses_existing_codex_install_dir() -> Result<()> {
     fs::write(existing_bin.join("codex"), "#!/bin/sh\necho stale codex\n")?;
     make_executable(&existing_bin.join("codex"))?;
 
-    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+    let fake_codex_path = fixtures.path().join("fake-codex");
+    fs::write(&fake_codex_path, "#!/bin/sh\nexit 0\n")?;
+    make_executable(&fake_codex_path)?;
+    let release_base_url = create_release_fixture_with_codex(
+        fixtures.path(),
+        &platform,
+        &fake_codex_path,
+        INSTALL_TAG,
+    )?;
     let stdout = run_installer(
         home.path(),
         &release_base_url,

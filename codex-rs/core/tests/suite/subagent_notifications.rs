@@ -18,6 +18,7 @@ use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::ev_tool_search_call;
@@ -62,6 +63,10 @@ const SUBAGENT_STOP_CONTINUATION: &str = "continue only the child";
 const INTERNAL_SUBAGENT_PROMPT: &str = "internal subagent: review";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
+    request_body_text(req).is_some_and(|body| body.contains(text))
+}
+
+fn request_body_text(req: &wiremock::Request) -> Option<String> {
     let is_zstd = req
         .headers
         .get("content-encoding")
@@ -76,9 +81,32 @@ fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     } else {
         Some(req.body.clone())
     };
-    bytes
-        .and_then(|body| String::from_utf8(body).ok())
-        .is_some_and(|body| body.contains(text))
+    bytes.and_then(|body| String::from_utf8(body).ok())
+}
+
+fn request_body_json(req: &wiremock::Request) -> Option<Value> {
+    request_body_text(req).and_then(|body| serde_json::from_str(&body).ok())
+}
+
+fn request_has_agent_message(req: &wiremock::Request, encrypted_message: &str) -> bool {
+    request_body_json(req)
+        .and_then(|body| body.get("input").and_then(Value::as_array).cloned())
+        .is_some_and(|input| {
+            input.iter().any(|item| {
+                item.get("type").and_then(Value::as_str) == Some("agent_message")
+                    && item
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .is_some_and(|content| {
+                            content.iter().any(|content| {
+                                content.get("type").and_then(Value::as_str)
+                                    == Some("encrypted_content")
+                                    && content.get("encrypted_content").and_then(Value::as_str)
+                                        == Some(encrypted_message)
+                            })
+                        })
+            })
+        })
 }
 
 fn ev_assistant_final_message(id: &str, text: &str) -> serde_json::Value {
@@ -328,6 +356,52 @@ async fn wait_for_requests(
         }
         if Instant::now() >= deadline {
             anyhow::bail!("expected at least 1 request, got {}", requests.len());
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn wait_for_agent_message_request(
+    mock: &core_test_support::responses::ResponseMock,
+    encrypted_message: &str,
+) -> Result<ResponsesRequest> {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        let requests = mock.requests();
+        if let Some(request) = requests.iter().find(|request| {
+            request.inputs_of_type("agent_message").iter().any(|item| {
+                item.get("content")
+                    .and_then(Value::as_array)
+                    .is_some_and(|content| {
+                        content.iter().any(|content| {
+                            content.get("type").and_then(Value::as_str) == Some("encrypted_content")
+                                && content.get("encrypted_content").and_then(Value::as_str)
+                                    == Some(encrypted_message)
+                        })
+                    })
+            })
+        }) {
+            return Ok(request.clone());
+        }
+        if Instant::now() >= deadline {
+            let summary = requests
+                .iter()
+                .map(|request| {
+                    request
+                        .input()
+                        .iter()
+                        .map(|item| {
+                            let ty = item
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .unwrap_or("<missing>");
+                            let contains = item.to_string().contains(encrypted_message);
+                            format!("{ty}:contains_encrypted={contains}")
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            anyhow::bail!("expected agent_message request; recorded input types: {summary:?}");
         }
         sleep(Duration::from_millis(10)).await;
     }
@@ -1214,7 +1288,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
     .await;
     let child_request_log = mount_sse_once_match(
         &server,
-        |req: &wiremock::Request| body_contains(req, "\"type\":\"agent_message\""),
+        |req: &wiremock::Request| request_has_agent_message(req, encrypted_message),
         sse(vec![
             ev_response_created("resp-child-1"),
             ev_completed("resp-child-1"),
@@ -1248,10 +1322,8 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
 
     test.submit_turn(TURN_1_PROMPT).await?;
 
-    let child_request = wait_for_requests(&child_request_log)
-        .await?
-        .pop()
-        .expect("child request");
+    let child_request =
+        wait_for_agent_message_request(&child_request_log, encrypted_message).await?;
     assert_eq!(
         child_request.inputs_of_type("agent_message"),
         vec![json!({
