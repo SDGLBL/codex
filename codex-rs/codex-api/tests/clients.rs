@@ -514,6 +514,7 @@ fn sampling_request(input: Vec<ResponseItem>) -> ResponsesApiRequest {
         text: None,
         client_metadata: None,
         access_programs: None,
+        max_output_tokens: None,
     }
 }
 
@@ -634,6 +635,52 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
 }
 
 #[tokio::test]
+async fn responses_request_omits_absent_max_output_tokens() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let client = ResponsesClient::new(transport, provider("openai"), Arc::new(NoAuth));
+
+    let request = ResponsesApiRequest {
+        model: "gpt-test".into(),
+        instructions: "Say hi".into(),
+        input: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+        client_metadata: None,
+        max_output_tokens: None,
+    };
+
+    let _stream = client
+        .stream_request(
+            request,
+            ResponsesOptions {
+                compression: Compression::None,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let requests = state.take_stream_requests();
+    assert_eq!(requests.len(), 1);
+    let body = requests[0]
+        .body
+        .as_ref()
+        .and_then(RequestBody::json)
+        .expect("request body should be JSON");
+    assert_eq!(body.get("max_output_tokens"), None);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn streaming_client_retries_on_transient_auth_error() -> Result<()> {
     let state = RecordingState::default();
     let transport = RecordingTransport::new(state.clone());
@@ -726,6 +773,7 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
         text: None,
         client_metadata: None,
         access_programs: None,
+        max_output_tokens: None,
     };
 
     let mut extra_headers = HeaderMap::new();
