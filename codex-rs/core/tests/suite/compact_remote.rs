@@ -861,7 +861,9 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
     skip_if_no_network!(Ok(()));
 
     let harness = TestCodexHarness::with_builder(
-        test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+        test_codex()
+            .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+            .with_config(|config| config.model_max_output_tokens = Some(8192)),
     )
     .await?;
     let image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=";
@@ -1136,6 +1138,7 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
             "strategy": "memento",
         })
     );
+    assert_eq!(compact_request.body_json()["max_output_tokens"], json!(8192));
     let compact_body = compact_request.body_json().to_string();
     assert!(
         compact_body.contains("\"type\":\"compaction_trigger\""),
@@ -1196,6 +1199,7 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
             .all(|item| !item.to_string().contains("child completion")),
         "expected v2 follow-up request to omit the child completion"
     );
+    assert_eq!(follow_up_request.body_json()["max_output_tokens"], json!(8192));
     let follow_up_body = follow_up_request.body_json().to_string();
     assert!(
         follow_up_body.contains("\"type\":\"compaction\""),
