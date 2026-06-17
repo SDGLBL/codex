@@ -232,6 +232,7 @@ impl MemoryStartupContext {
             config.model_provider.clone(),
             session_source.clone(),
             config.model_verbosity,
+            config.model_max_output_tokens,
             config.features.enabled(Feature::EnableRequestCompression),
             config.features.enabled(Feature::RuntimeMetrics),
             /*beta_features_header*/ None,
