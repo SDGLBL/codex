@@ -1349,6 +1349,10 @@ pub(crate) async fn build_realtime_session_config(
         ConfiguredRealtimeVoice::Use => config.realtime.voice,
         ConfiguredRealtimeVoice::Ignore => None,
     };
+    let requested_session_id = match params.realtime_session_id.clone() {
+        Some(session_id) => session_id,
+        None => sess.wire_session_id().await.to_string(),
+    };
     let voice = params
         .voice
         .or(config_voice)
@@ -1359,12 +1363,7 @@ pub(crate) async fn build_realtime_session_config(
         initial_items: params.initial_items.clone(),
         delegation_ack_filler: params.delegation_ack_filler,
         model,
-        session_id: Some(
-            params
-                .realtime_session_id
-                .clone()
-                .unwrap_or_else(|| sess.thread_id.to_string()),
-        ),
+        session_id: Some(requested_session_id),
         event_parser,
         session_mode,
         output_modality: params.output_modality,
