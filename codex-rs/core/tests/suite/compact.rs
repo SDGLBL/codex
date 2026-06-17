@@ -2139,6 +2139,7 @@ async fn pre_sampling_compact_runs_on_switch_to_smaller_context_model() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
+            let _ = config.features.disable(Feature::Apps);
         });
     let test = builder.build(&server).await.expect("build test codex");
 
@@ -2241,6 +2242,7 @@ async fn pre_sampling_compact_runs_when_comp_hash_changes() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
+            let _ = config.features.disable(Feature::Apps);
         });
     let test = builder.build(&server).await.expect("build test codex");
 
@@ -2532,6 +2534,7 @@ async fn pre_sampling_compact_runs_after_resume_and_switch_to_smaller_model() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
+            let _ = config.features.disable(Feature::Apps);
         });
     let initial = initial_builder
         .build(&server)
@@ -2575,6 +2578,7 @@ async fn pre_sampling_compact_runs_after_resume_and_switch_to_smaller_model() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
+            let _ = config.features.disable(Feature::Apps);
         });
     let resumed = resumed_builder
         .resume(&server, home, rollout_path)
