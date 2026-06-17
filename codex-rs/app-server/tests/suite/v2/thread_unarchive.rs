@@ -214,6 +214,7 @@ async fn thread_unarchive_preserves_pathless_store_metadata() -> Result<()> {
             session_id: thread_id.into(),
             thread_id,
             extra_config: None,
+            wire_session_id: thread_id,
             forked_from_id: Some(parent_thread_id),
             parent_thread_id: None,
             source: SessionSource::Cli,

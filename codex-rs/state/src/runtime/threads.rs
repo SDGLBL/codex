@@ -2083,6 +2083,7 @@ mod tests {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: Some(thread_id),
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: metadata.created_at.to_rfc3339(),
@@ -2150,6 +2151,7 @@ mod tests {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: Some(thread_id),
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: created_at,
