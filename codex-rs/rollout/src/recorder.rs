@@ -99,6 +99,7 @@ pub enum RolloutRecorderParams {
         /// `rollout-<timestamp>-<conversation_id>_<rollout_id>.jsonl`, because revert keeps the
         /// thread ID stable while creating a new immutable rollout file.
         rollout_id_override: Option<RolloutId>,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         attached_thread: bool,
         forked_from_ordinal_exclusive: Option<u64>,
@@ -209,6 +210,7 @@ impl RolloutRecorderParams {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: SessionSource,
@@ -221,6 +223,7 @@ impl RolloutRecorderParams {
             session_id: conversation_id.into(),
             conversation_id,
             rollout_id_override: None,
+            wire_session_id,
             forked_from_id,
             attached_thread: false,
             forked_from_ordinal_exclusive: None,
@@ -922,6 +925,7 @@ impl RolloutRecorder {
                 session_id,
                 conversation_id,
                 rollout_id_override,
+                wire_session_id,
                 forked_from_id,
                 attached_thread,
                 forked_from_ordinal_exclusive,
@@ -958,6 +962,7 @@ impl RolloutRecorder {
                 let session_meta = SessionMeta {
                     session_id,
                     id: conversation_id,
+                    wire_session_id: Some(wire_session_id),
                     forked_from_id,
                     attached_thread,
                     forked_from_ordinal_exclusive: forked_from_ordinal_exclusive
