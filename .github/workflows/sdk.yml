@@ -45,13 +45,8 @@ jobs:
       id-token: write
     # Keep the Bazel CLI build advisory until the public build and cache rollout is verified.
     continue-on-error: true
-    runs-on:
-      group: ${{ github.event.repository.name }}-runners
-      labels: ${{ github.event.repository.name }}-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 90
-    environment:
-      name: bazel
-      deployment: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
