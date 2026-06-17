@@ -665,6 +665,8 @@ pub struct Config {
     /// Percentage of the usable context window that triggers turn-end compaction.
     /// Zero disables turn-end compaction.
     pub model_post_turn_compact_threshold_percent: u8,
+    /// Optional override of the maximum output tokens to request from the model.
+    pub model_max_output_tokens: Option<i64>,
 
     /// Percentage of the model's full context window at which background compaction starts.
     pub async_compaction_threshold_percent: u8,
@@ -4541,6 +4543,9 @@ impl Config {
                 .model_post_turn_compact_threshold_percent
                 .unwrap_or_default(),
             async_compaction_threshold_percent,
+            model_max_output_tokens: config_profile
+                .model_max_output_tokens
+                .or(cfg.model_max_output_tokens),
             model_provider_id,
             model_provider,
             cwd: resolved_cwd,
