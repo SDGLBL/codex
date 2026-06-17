@@ -1224,6 +1224,35 @@ fn record_items_truncates_custom_tool_call_output_content() {
 }
 
 #[test]
+fn record_items_preserves_code_mode_exec_output_after_exec_budgeting() {
+    let mut history = ContextManager::new();
+    let policy = TruncationPolicy::Bytes(1_000);
+    let long_output = "x".repeat(50_000);
+    let call = ResponseItem::CustomToolCall {
+        id: None,
+        status: None,
+        call_id: "call-code-mode-exec".to_string(),
+        name: "exec".to_string(),
+        input: "// @exec: {\"max_output_tokens\": 20000}\ntext(result.output);".to_string(),
+    };
+    let output = ResponseItem::CustomToolCallOutput {
+        call_id: "call-code-mode-exec".to_string(),
+        name: None,
+        output: FunctionCallOutputPayload::from_text(long_output.clone()),
+    };
+
+    history.record_items([&call, &output], policy);
+
+    assert_eq!(history.items.len(), 2);
+    match &history.items[1] {
+        ResponseItem::CustomToolCallOutput { output, .. } => {
+            assert_eq!(output.text_content().unwrap_or_default(), long_output);
+        }
+        other => panic!("unexpected history item: {other:?}"),
+    }
+}
+
+#[test]
 fn record_items_respects_custom_token_limit() {
     let mut history = ContextManager::new();
     let policy = TruncationPolicy::Tokens(10);
