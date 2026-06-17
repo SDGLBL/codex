@@ -397,6 +397,7 @@ mod tests {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: Some(
                         ThreadId::from_string(&Uuid::now_v7().to_string()).expect("thread id"),
                     ),
@@ -662,6 +663,7 @@ mod tests {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: None,
                     forked_from_ordinal_exclusive: None,
                     parent_thread_id: None,

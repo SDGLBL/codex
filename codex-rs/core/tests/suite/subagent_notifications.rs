@@ -4,6 +4,7 @@ use codex_core::ThreadConfigSnapshot;
 use codex_core::TurnInputRequest;
 use codex_core::config::AgentRoleConfig;
 use codex_core::config::CurrentTimeReminderConfig;
+use codex_core::read_session_meta_line;
 use codex_features::Feature;
 use codex_history::RolloutItem;
 use codex_models_manager::bundled_models_response;
@@ -76,6 +77,7 @@ const TURN_0_FORK_PROMPT: &str = "seed fork context";
 const TURN_1_PROMPT: &str = "spawn a child and continue";
 const TURN_2_NO_WAIT_PROMPT: &str = "follow up without wait";
 const CHILD_PROMPT: &str = "child: do work";
+const RESUMED_CHILD_PROMPT: &str = "resumed child: continue";
 const INHERITED_MODEL: &str = "gpt-5.2";
 const INHERITED_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::XHigh;
 const REQUESTED_MODEL: &str = "gpt-5.4";
@@ -130,6 +132,12 @@ fn decoded_body(req: &wiremock::Request) -> Option<Vec<u8>> {
     } else {
         Some(req.body.clone())
     }
+}
+
+fn ev_assistant_final_message(id: &str, text: &str) -> serde_json::Value {
+    let mut event = ev_assistant_message(id, text);
+    event["item"]["phase"] = json!("final_answer");
+    event
 }
 
 fn log_field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
@@ -1364,6 +1372,146 @@ async fn grandchild_full_fork_preserves_context_baseline(
         "Initial context should appear once per agent: {parent_context:?}, {history_mode:?}"
     );
     assert!(!descendant_requests[1].body_contains_text(CHILD_TASK));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+
+    let seed_turn = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_0_FORK_PROMPT),
+        sse(vec![
+            ev_response_created("resp-seed-1"),
+            ev_assistant_final_message("msg-seed-1", "seeded"),
+            ev_completed("resp-seed-1"),
+        ]),
+    )
+    .await;
+
+    let spawn_args = serde_json::to_string(&json!({
+        "message": CHILD_PROMPT,
+        "fork_context": true,
+    }))?;
+    let spawn_turn = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
+        sse(vec![
+            ev_response_created("resp-turn1-1"),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V1_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
+            ev_completed("resp-turn1-1"),
+        ]),
+    )
+    .await;
+
+    let child_request_log = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
+        },
+        sse(vec![
+            ev_response_created("resp-child-1"),
+            ev_assistant_message("msg-child-1", "child done"),
+            ev_completed("resp-child-1"),
+        ]),
+    )
+    .await;
+
+    let _turn1_followup = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
+        sse(vec![
+            ev_response_created("resp-turn1-2"),
+            ev_assistant_message("msg-turn1-2", "parent done"),
+            ev_completed("resp-turn1-2"),
+        ]),
+    )
+    .await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.submit_turn(TURN_0_FORK_PROMPT).await?;
+    let _ = seed_turn.single_request();
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let _ = spawn_turn.single_request();
+
+    let parent_session_id = test.session_configured.session_id.to_string();
+    let spawned_id = wait_for_spawned_thread_id(&test).await?;
+    let child_request = wait_for_requests(&child_request_log)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("expected forked child request"))?;
+    assert_eq!(
+        child_request.header("session-id").as_deref(),
+        Some(parent_session_id.as_str())
+    );
+
+    let child_rollout_path = test
+        .thread_manager
+        .get_thread(ThreadId::from_string(&spawned_id)?)
+        .await?
+        .rollout_path()
+        .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
+    let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
+    assert_eq!(
+        child_session_meta
+            .meta
+            .wire_session_id
+            .map(|id| id.to_string()),
+        Some(parent_session_id.clone())
+    );
+
+    let resumed_child_turn = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, RESUMED_CHILD_PROMPT),
+        sse(vec![
+            ev_response_created("resp-child-resumed-1"),
+            ev_assistant_message("msg-child-resumed-1", "resumed child done"),
+            ev_completed("resp-child-resumed-1"),
+        ]),
+    )
+    .await;
+
+    let resumed = test_codex()
+        .with_home(test.home.clone())
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+        })
+        .resume(&server, test.home.clone(), child_rollout_path)
+        .await?;
+    resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
+
+    let resumed_request = wait_for_requests(&resumed_child_turn)
+        .await?
+        .into_iter()
+        .find(|request| request.body_contains_text(RESUMED_CHILD_PROMPT))
+        .ok_or_else(|| anyhow::anyhow!("expected resumed child request"))?;
+    assert_eq!(
+        resumed_request.header("session-id").as_deref(),
+        Some(parent_session_id.as_str())
+    );
+
     Ok(())
 }
 
