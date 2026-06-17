@@ -240,6 +240,24 @@ impl InitialHistory {
         }
     }
 
+    pub fn wire_session_id(&self) -> Option<ThreadId> {
+        match self {
+            Self::New | Self::Cleared => None,
+            Self::Resumed(resumed) => resumed.history.iter().find_map(|item| match item {
+                RolloutItem::SessionMeta(meta_line) => {
+                    Some(meta_line.meta.wire_session_id.unwrap_or(meta_line.meta.id))
+                }
+                _ => None,
+            }),
+            Self::Forked(items) => items.iter().find_map(|item| match item {
+                RolloutItem::SessionMeta(meta_line) => {
+                    Some(meta_line.meta.wire_session_id.unwrap_or(meta_line.meta.id))
+                }
+                _ => None,
+            }),
+        }
+    }
+
     pub fn forked_from_id(&self) -> Option<ThreadId> {
         match self {
             Self::New | Self::Cleared => None,
