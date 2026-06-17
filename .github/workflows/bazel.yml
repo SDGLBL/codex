@@ -21,6 +21,7 @@ jobs:
     # Code-mode unit tests run on every Bazel target. When authenticated RBE
     # is available, the Windows-cross shards exercise the source-built V8 path.
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:
