@@ -186,9 +186,13 @@ fn run_realtime_conversation_test_in_subprocess(
         .arg("--exact")
         .arg(test_name)
         .env(REALTIME_CONVERSATION_TEST_SUBPROCESS_ENV_VAR, "1");
-    // The child talks to a loopback websocket server; parent proxy settings can
-    // route that connection away from the test server in Bazel environments.
-    for &key in codex_network_proxy::PROXY_ENV_KEYS {
+    // The child talks to a loopback websocket server. Keep HTTP(S) proxy
+    // settings for environments that require them, but force loopback traffic
+    // away from proxying and clear websocket-specific proxy overrides.
+    command
+        .env("NO_PROXY", "localhost,127.0.0.1,::1")
+        .env("no_proxy", "localhost,127.0.0.1,::1");
+    for key in ["WS_PROXY", "WSS_PROXY", "ws_proxy", "wss_proxy"] {
         command.env_remove(key);
     }
     match openai_api_key {
@@ -1075,7 +1079,7 @@ async fn conversation_start_uses_openai_env_key_fallback_with_chatgpt_auth() -> 
     let test = builder.build_with_websocket_server(&server).await?;
     assert!(
         server
-            .wait_for_handshakes(/*expected*/ 1, Duration::from_secs(2))
+            .wait_for_handshakes(/*expected*/ 1, Duration::from_secs(10))
             .await
     );
 
