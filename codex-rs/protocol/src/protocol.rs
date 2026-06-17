@@ -3039,6 +3039,8 @@ pub struct SessionMeta {
     pub session_id: SessionId,
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub wire_session_id: Option<ThreadId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
     /// Exclusive ordinal inherited from the logical fork parent, independent of `history_base`.
     /// Revert may replace the physical history base while retaining this fork boundary.
@@ -3104,6 +3106,7 @@ impl Default for SessionMeta {
         SessionMeta {
             session_id: id.into(),
             id,
+            wire_session_id: None,
             forked_from_id: None,
             forked_from_ordinal_exclusive: None,
             parent_thread_id: None,
