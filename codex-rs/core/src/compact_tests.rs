@@ -2,6 +2,7 @@ use super::*;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::InternalChatMessageMetadataPassthrough;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
@@ -55,6 +56,19 @@ fn compacted_user_message(text: &str) -> CompactedUserMessage {
         message: text.to_string(),
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+async fn process_compacted_history_without_initial_context(
+    compacted_history: Vec<ResponseItem>,
+) -> Vec<ResponseItem> {
+    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+    crate::compact_remote::process_compacted_history(
+        &session,
+        &turn_context,
+        compacted_history,
+        InitialContextInjection::DoNotInject,
+    )
+    .await
 }
 
 #[test]
@@ -441,6 +455,97 @@ async fn process_compacted_history_drops_legacy_warnings() {
     .await;
     let mut expected = initial_context;
     expected.push(latest_user);
+    assert_eq!(refreshed, expected);
+}
+
+#[tokio::test]
+async fn process_compacted_history_keeps_assistant_with_encrypted_reasoning() {
+    let compacted_history = vec![
+        ResponseItem::Reasoning {
+            id: "rs_123".to_string(),
+            summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                text: "thinking".to_string(),
+            }],
+            content: None,
+            encrypted_content: Some("encrypted-content".to_string()),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "assistant output".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ];
+
+    let refreshed =
+        process_compacted_history_without_initial_context(compacted_history.clone()).await;
+    assert_eq!(refreshed, compacted_history);
+}
+
+#[tokio::test]
+async fn process_compacted_history_converts_assistant_without_reasoning_to_summary_message() {
+    let compacted_history = vec![ResponseItem::Message {
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: "assistant output".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }];
+
+    let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
+    let summary_prefix = SUMMARY_PREFIX.trim_end();
+    let expected = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!("{summary_prefix}\nassistant output"),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }];
+    assert_eq!(refreshed, expected);
+}
+
+#[tokio::test]
+async fn process_compacted_history_drops_reasoning_without_encrypted_content() {
+    let compacted_history = vec![
+        ResponseItem::Reasoning {
+            id: "rs_123".to_string(),
+            summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                text: "thinking".to_string(),
+            }],
+            content: None,
+            encrypted_content: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "assistant output".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ];
+
+    let refreshed = process_compacted_history_without_initial_context(compacted_history).await;
+    let summary_prefix = SUMMARY_PREFIX.trim_end();
+    let expected = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!("{summary_prefix}\nassistant output"),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }];
     assert_eq!(refreshed, expected);
 }
 
