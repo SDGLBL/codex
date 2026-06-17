@@ -19,6 +19,7 @@ jobs:
     # pushes to main also run the native Windows test job for broader Windows
     # signal without putting PR latency back on the critical path.
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:
