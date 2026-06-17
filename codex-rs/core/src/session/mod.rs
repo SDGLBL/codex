@@ -704,6 +704,7 @@ impl Session {
             legacy_fallback_cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
             thread_name: None,
+            wire_session_id: conversation_history.wire_session_id(),
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
