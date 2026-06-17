@@ -3286,6 +3286,8 @@ pub struct SessionMeta {
     pub session_id: SessionId,
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub wire_session_id: Option<ThreadId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
     /// Marks a persisted fork as attached to `forked_from_id`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -3363,6 +3365,7 @@ impl Default for SessionMeta {
             creator_account_id: None,
             session_id: id.into(),
             id,
+            wire_session_id: None,
             forked_from_id: None,
             attached_thread: false,
             forked_from_ordinal_exclusive: None,
