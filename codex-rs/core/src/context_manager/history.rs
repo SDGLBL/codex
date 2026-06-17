@@ -664,8 +664,16 @@ impl ContextManager {
             metadata: metadata.cloned(),
         };
         self.sampling.record(&mut processed);
-        if let ResponseItem::FunctionCallOutput { output, .. }
-        | ResponseItem::CustomToolCallOutput { output, .. } = &mut processed.item
+        let should_truncate_output = match &processed.item {
+            ResponseItem::FunctionCallOutput { .. } => true,
+            ResponseItem::CustomToolCallOutput { call_id, name, .. } => {
+                !self.is_code_mode_exec_output(call_id, name.as_deref())
+            }
+            _ => false,
+        };
+        if should_truncate_output
+            && let ResponseItem::FunctionCallOutput { output, .. }
+            | ResponseItem::CustomToolCallOutput { output, .. } = &mut processed.item
         {
             // The override already includes the tool's serialization allowance.
             let policy = metadata
@@ -1206,6 +1214,28 @@ impl ContextManager {
     /// rollback-trimmable contextual fragments and persistent developer text, this also clears the
     /// stored `reference_context_item` baseline so the next real turn falls back to full
     /// reinjection.
+    fn is_code_mode_exec_output(&self, call_id: &str, output_name: Option<&str>) -> bool {
+        const CODE_MODE_EXEC_TOOL_NAME: &str = "exec";
+
+        if output_name == Some(CODE_MODE_EXEC_TOOL_NAME) {
+            return true;
+        }
+
+        self.items.iter().rev().any(|item| {
+            matches!(
+                item,
+                ResponseItemEnvelope {
+                    item: ResponseItem::CustomToolCall {
+                        call_id: custom_call_id,
+                        name,
+                        ..
+                    },
+                    ..
+                } if custom_call_id == call_id && name == CODE_MODE_EXEC_TOOL_NAME
+            )
+        })
+    }
+
     fn trim_pre_turn_context_updates(
         &mut self,
         snapshot: &[ResponseItemEnvelope],
