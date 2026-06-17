@@ -39,6 +39,7 @@ fn write_rollout_with_source_and_provider(
                 creator_account_id: None,
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: None,
                 forked_from_id: None,
                 forked_from_ordinal_exclusive: None,
                 parent_thread_id: None,

@@ -193,6 +193,7 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
             creator_account_id: None,
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             forked_from_id: None,
             forked_from_ordinal_exclusive: None,
             parent_thread_id: None,
@@ -676,6 +677,7 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,
@@ -939,6 +941,7 @@ async fn persist_reports_filesystem_error_and_retries_buffered_items() -> std::i
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
+            thread_id,
             thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
