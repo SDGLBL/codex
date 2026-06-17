@@ -72,13 +72,30 @@ pub async fn handle(
     arguments: String,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: SpawnAgentsOnCsvArgs = parse_arguments(arguments.as_str())?;
-    if args.instruction.trim().is_empty() {
+    let cwd = single_local_environment_cwd(&turn)?;
+    let instruction = if let Some(instruction_path) = args
+        .instruction_path
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+    {
+        let instruction_path = cwd.join(instruction_path);
+        let instruction_path_display = instruction_path.display().to_string();
+        tokio::fs::read_to_string(&instruction_path)
+            .await
+            .map_err(|err| {
+                FunctionCallError::RespondToModel(format!(
+                    "failed to read instruction input {instruction_path_display}: {err}"
+                ))
+            })?
+    } else {
+        args.instruction.unwrap_or_default()
+    };
+    if instruction.trim().is_empty() {
         return Err(FunctionCallError::RespondToModel(
             "instruction must be non-empty".to_string(),
         ));
     }
 
-    let cwd = single_local_environment_cwd(&turn)?;
     let db = required_state_db(&session)?;
     let input_path = cwd.join(args.csv_path);
     let input_path_display = input_path.display().to_string();
@@ -166,7 +183,7 @@ pub async fn handle(
             &codex_state::AgentJobCreateParams {
                 id: job_id.clone(),
                 name: job_name,
-                instruction: args.instruction,
+                instruction,
                 auto_export: true,
                 max_runtime_seconds,
                 output_schema_json: args.output_schema,
