@@ -1753,6 +1753,7 @@ mod tests {
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: thread_id,
+                wire_session_id: Some(thread_id),
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: metadata.created_at.to_rfc3339(),
@@ -1814,6 +1815,7 @@ mod tests {
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: thread_id,
+                wire_session_id: Some(thread_id),
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: created_at,
