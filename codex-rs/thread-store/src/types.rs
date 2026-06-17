@@ -70,6 +70,8 @@ pub struct CreateThreadParams {
     pub thread_id: ThreadId,
     /// Optional extra configuration fields for the thread.
     pub extra_config: Option<ExtraConfig>,
+    /// Wire session id propagated on provider requests for this thread.
+    pub wire_session_id: ThreadId,
     /// Source thread id when this thread is created as a fork.
     pub forked_from_id: Option<ThreadId>,
     /// The ID of the parent thread. This will only be set if this thread is a subagent.

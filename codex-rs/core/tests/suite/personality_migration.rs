@@ -61,6 +61,7 @@ async fn write_rollout_with_user_event(dir: &Path, thread_id: ThreadId) -> io::R
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: Some(thread_id),
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
@@ -112,6 +113,7 @@ async fn write_rollout_with_meta_only(dir: &Path, thread_id: ThreadId) -> io::Re
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: Some(thread_id),
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
