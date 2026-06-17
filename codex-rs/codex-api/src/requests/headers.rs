@@ -3,6 +3,7 @@ use codex_protocol::protocol::ThreadSource;
 use codex_utils_string::to_ascii_json_string;
 use http::HeaderMap;
 use http::HeaderValue;
+use serde_json::json;
 
 /// Correlate both the media call and its observer with the same thread and session tree.
 pub fn build_realtime_thread_headers(
@@ -26,6 +27,8 @@ pub fn build_session_headers(session_id: Option<String>, thread_id: Option<Strin
     let mut headers = HeaderMap::new();
     if let Some(id) = session_id {
         insert_header(&mut headers, "session-id", &id);
+        let extra_value = json!({ "session_id": id }).to_string();
+        insert_header(&mut headers, "extra", &extra_value);
     }
     if let Some(id) = thread_id {
         insert_header(&mut headers, "thread-id", &id);

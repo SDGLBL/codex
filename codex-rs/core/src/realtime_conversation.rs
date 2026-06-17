@@ -1917,8 +1917,15 @@ async fn prepare_realtime_start(
         }
     }
     .unwrap_or_default();
+    let transport_session_id = if provider.supports_codex_backend_routes()
+        && auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth)
+    {
+        sess.session_id().to_string()
+    } else {
+        sess.wire_session_id().await.to_string()
+    };
     extra_headers.extend(build_realtime_thread_headers(
-        sess.session_id().to_string(),
+        transport_session_id,
         sess.thread_id().to_string(),
         sess.thread_config_snapshot().await.thread_source,
     ));
