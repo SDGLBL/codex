@@ -255,6 +255,7 @@ fn create_fake_rollout_with_source_and_parent_thread_id(
     let meta = SessionMeta {
         session_id,
         id: conversation_id,
+        wire_session_id: Some(conversation_id),
         forked_from_id: None,
         forked_from_ordinal_exclusive: None,
         parent_thread_id,
@@ -348,6 +349,7 @@ pub fn create_fake_rollout_with_text_elements(
     let meta = SessionMeta {
         session_id: conversation_id.into(),
         id: conversation_id,
+        wire_session_id: Some(conversation_id),
         forked_from_id: None,
         forked_from_ordinal_exclusive: None,
         parent_thread_id: None,
