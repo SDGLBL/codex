@@ -94,6 +94,7 @@ pub enum RolloutRecorderParams {
     Create {
         session_id: SessionId,
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: Box<SessionSource>,
@@ -178,6 +179,7 @@ impl RolloutRecorderParams {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         conversation_id: ThreadId,
+        wire_session_id: ThreadId,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: SessionSource,
@@ -189,6 +191,7 @@ impl RolloutRecorderParams {
         Self::Create {
             session_id: conversation_id.into(),
             conversation_id,
+            wire_session_id,
             forked_from_id,
             parent_thread_id,
             source: Box::new(source),
@@ -800,6 +803,7 @@ impl RolloutRecorder {
             RolloutRecorderParams::Create {
                 session_id,
                 conversation_id,
+                wire_session_id,
                 forked_from_id,
                 parent_thread_id,
                 source,
@@ -832,6 +836,7 @@ impl RolloutRecorder {
                 let session_meta = SessionMeta {
                     session_id,
                     id: thread_id,
+                    wire_session_id: Some(wire_session_id),
                     forked_from_id,
                     parent_thread_id,
                     timestamp,

@@ -122,6 +122,7 @@ async fn get_conversation_summary_by_thread_id_reads_pathless_store_thread() -> 
             session_id: thread_id.into(),
             thread_id,
             extra_config: None,
+            wire_session_id: thread_id,
             forked_from_id: None,
             parent_thread_id: None,
             source: SessionSource::Cli,

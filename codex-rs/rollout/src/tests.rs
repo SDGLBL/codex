@@ -1338,6 +1338,7 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
             meta: SessionMeta {
                 session_id: conversation_id.into(),
                 id: conversation_id,
+                wire_session_id: Some(conversation_id),
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: ts.to_string(),
