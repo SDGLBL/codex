@@ -1785,6 +1785,7 @@ impl Session {
                     config.model_verbosity,
                     config.features.enabled(Feature::ContentItemKinds),
                     reasoning_effort_override_enabled,
+                    config.model_max_output_tokens,
                     config.features.enabled(Feature::EnableRequestCompression),
                     config.features.enabled(Feature::RuntimeMetrics),
                     Self::build_model_client_beta_features_header(config.as_ref()),
