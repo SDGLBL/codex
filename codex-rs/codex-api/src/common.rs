@@ -63,6 +63,8 @@ pub struct CompactionInput<'a> {
     pub text: Option<TextControls>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_programs: Option<AccessPrograms>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
 }
 
 /// Canonical input payload for the memory summarize endpoint.
@@ -297,6 +299,7 @@ pub struct ResponsesApiRequest {
     pub client_metadata: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_programs: Option<AccessPrograms>,
+    pub max_output_tokens: Option<i64>,
 }
 
 impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequest<'a> {
@@ -317,6 +320,7 @@ impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequest<'a> {
             service_tier: request.service_tier.as_deref(),
             prompt_cache_key: request.prompt_cache_key.as_deref(),
             text: request.text.as_ref(),
+            max_output_tokens: request.max_output_tokens,
             generate: None,
             client_metadata: request.client_metadata.clone(),
             access_programs: request.access_programs,
@@ -348,6 +352,8 @@ pub struct ResponseCreateWsRequest<'a> {
     pub prompt_cache_key: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<&'a TextControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
