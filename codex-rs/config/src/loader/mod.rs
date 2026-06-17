@@ -1144,12 +1144,15 @@ async fn find_project_root(
     for ancestor in cwd.ancestors() {
         for marker in project_root_markers {
             let marker_path = ancestor.join(marker);
-            let marker_path_uri = PathUri::from_abs_path(&marker_path);
-            if fs
-                .get_metadata(&marker_path_uri, /*sandbox*/ None)
-                .await
-                .is_ok()
-            {
+            let marker_found = if marker == ".git" {
+                is_git_entry(fs, &marker_path).await
+            } else {
+                let marker_path_uri = PathUri::from_abs_path(&marker_path);
+                fs.get_metadata(&marker_path_uri, /*sandbox*/ None)
+                    .await
+                    .is_ok()
+            };
+            if marker_found {
                 return Ok(ancestor);
             }
         }
@@ -1169,16 +1172,26 @@ async fn find_git_checkout_root(
 
     for dir in base.ancestors() {
         let dot_git = dir.join(".git");
-        let dot_git_uri = PathUri::from_abs_path(&dot_git);
-        if fs
-            .get_metadata(&dot_git_uri, /*sandbox*/ None)
-            .await
-            .is_ok()
-        {
+        if is_git_entry(fs, &dot_git).await {
             return Some(dir);
         }
     }
     None
+}
+
+async fn is_git_entry(fs: &dyn ExecutorFileSystem, dot_git: &AbsolutePathBuf) -> bool {
+    let dot_git_uri = PathUri::from_abs_path(dot_git);
+    let Ok(metadata) = fs.get_metadata(&dot_git_uri, /*sandbox*/ None).await else {
+        return false;
+    };
+    let head_uri = PathUri::from_abs_path(&dot_git.join("HEAD"));
+    metadata.is_file
+        || (metadata.is_directory
+            && fs
+                .get_metadata(&head_uri, /*sandbox*/ None)
+                .await
+                .ok()
+                .is_some_and(|metadata| metadata.is_file))
 }
 
 struct LoadedProjectLayers {
