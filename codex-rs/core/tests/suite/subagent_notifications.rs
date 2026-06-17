@@ -65,6 +65,10 @@ const SUBAGENT_STOP_CONTINUATION: &str = "continue only the child";
 const INTERNAL_SUBAGENT_PROMPT: &str = "internal subagent: review";
 
 fn body_contains(req: &wiremock::Request, text: &str) -> bool {
+    request_body_text(req).is_some_and(|body| body.contains(text))
+}
+
+fn request_body_text(req: &wiremock::Request) -> Option<String> {
     let is_zstd = req
         .headers
         .get("content-encoding")
@@ -79,9 +83,32 @@ fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     } else {
         Some(req.body.clone())
     };
-    bytes
-        .and_then(|body| String::from_utf8(body).ok())
-        .is_some_and(|body| body.contains(text))
+    bytes.and_then(|body| String::from_utf8(body).ok())
+}
+
+fn request_body_json(req: &wiremock::Request) -> Option<Value> {
+    request_body_text(req).and_then(|body| serde_json::from_str(&body).ok())
+}
+
+fn request_has_agent_message(req: &wiremock::Request, encrypted_message: &str) -> bool {
+    request_body_json(req)
+        .and_then(|body| body.get("input").and_then(Value::as_array).cloned())
+        .is_some_and(|input| {
+            input.iter().any(|item| {
+                item.get("type").and_then(Value::as_str) == Some("agent_message")
+                    && item
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .is_some_and(|content| {
+                            content.iter().any(|content| {
+                                content.get("type").and_then(Value::as_str)
+                                    == Some("encrypted_content")
+                                    && content.get("encrypted_content").and_then(Value::as_str)
+                                        == Some(encrypted_message)
+                            })
+                        })
+            })
+        })
 }
 
 fn ev_assistant_final_message(id: &str, text: &str) -> serde_json::Value {
@@ -331,6 +358,52 @@ async fn wait_for_requests(
         }
         if Instant::now() >= deadline {
             anyhow::bail!("expected at least 1 request, got {}", requests.len());
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn wait_for_agent_message_request(
+    mock: &core_test_support::responses::ResponseMock,
+    encrypted_message: &str,
+) -> Result<ResponsesRequest> {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        let requests = mock.requests();
+        if let Some(request) = requests.iter().find(|request| {
+            request.inputs_of_type("agent_message").iter().any(|item| {
+                item.get("content")
+                    .and_then(Value::as_array)
+                    .is_some_and(|content| {
+                        content.iter().any(|content| {
+                            content.get("type").and_then(Value::as_str) == Some("encrypted_content")
+                                && content.get("encrypted_content").and_then(Value::as_str)
+                                    == Some(encrypted_message)
+                        })
+                    })
+            })
+        }) {
+            return Ok(request.clone());
+        }
+        if Instant::now() >= deadline {
+            let summary = requests
+                .iter()
+                .map(|request| {
+                    request
+                        .input()
+                        .iter()
+                        .map(|item| {
+                            let ty = item
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .unwrap_or("<missing>");
+                            let contains = item.to_string().contains(encrypted_message);
+                            format!("{ty}:contains_encrypted={contains}")
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            anyhow::bail!("expected agent_message request; recorded input types: {summary:?}");
         }
         sleep(Duration::from_millis(10)).await;
     }
@@ -856,7 +929,7 @@ async fn spawned_child_without_fork_uses_child_thread_id_for_session_header() ->
     assert_eq!(
         child_request
             .headers
-            .get("session_id")
+            .get("session-id")
             .and_then(|value| value.to_str().ok()),
         Some(spawned_id.as_str())
     );
@@ -947,7 +1020,7 @@ async fn spawned_child_receives_forked_parent_context() -> Result<()> {
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
     assert!(child_request.body_contains_text("seeded"));
     assert_eq!(
-        child_request.header("session_id").as_deref(),
+        child_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 
@@ -980,7 +1053,12 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-turn1-1"),
-            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V1_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
             ev_completed("resp-turn1-1"),
         ]),
     )
@@ -1031,7 +1109,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .next()
         .ok_or_else(|| anyhow::anyhow!("expected forked child request"))?;
     assert_eq!(
-        child_request.header("session_id").as_deref(),
+        child_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 
@@ -1072,10 +1150,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
     let resumed = resume_builder
         .resume(&server, test.home.clone(), child_rollout_path)
         .await?;
-    assert_eq!(
-        resumed.session_configured.session_id.to_string(),
-        spawned_id
-    );
+    assert_eq!(resumed.session_configured.thread_id.to_string(), spawned_id);
 
     resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
 
@@ -1085,7 +1160,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .find(|request| request.body_contains_text(RESUMED_CHILD_PROMPT))
         .ok_or_else(|| anyhow::anyhow!("expected resumed child request"))?;
     assert_eq!(
-        resumed_request.header("session_id").as_deref(),
+        resumed_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 
@@ -1211,7 +1286,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
     .await;
     let child_request_log = mount_sse_once_match(
         &server,
-        |req: &wiremock::Request| body_contains(req, "\"type\":\"agent_message\""),
+        |req: &wiremock::Request| request_has_agent_message(req, encrypted_message),
         sse(vec![
             ev_response_created("resp-child-1"),
             ev_completed("resp-child-1"),
@@ -1245,10 +1320,8 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
 
     test.submit_turn(TURN_1_PROMPT).await?;
 
-    let child_request = wait_for_requests(&child_request_log)
-        .await?
-        .pop()
-        .expect("child request");
+    let child_request =
+        wait_for_agent_message_request(&child_request_log, encrypted_message).await?;
     assert_eq!(
         strip_metadata_from_json(Value::Array(child_request.inputs_of_type("agent_message"))),
         Value::Array(vec![json!({
