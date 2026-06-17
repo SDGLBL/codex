@@ -2963,6 +2963,7 @@ async fn websocket_harness_with_provider_factory(
         config.model_verbosity,
         config.features.enabled(Feature::ContentItemKinds),
         config.features.enabled(Feature::ReasoningEffortOverride),
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         runtime_metrics_enabled,
         /*beta_features_header*/ None,
