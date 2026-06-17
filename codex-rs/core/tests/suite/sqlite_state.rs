@@ -358,6 +358,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: None,
                     parent_thread_id: None,
                     timestamp: "2026-01-27T12:00:00Z".to_string(),

@@ -87,6 +87,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) codex_home: AbsolutePathBuf,
     /// Optional user-facing name for the thread, updated during the session.
     pub(super) thread_name: Option<String>,
+    pub(super) wire_session_id: Option<ThreadId>,
 
     // TODO(pakrym): Remove config from here
     pub(super) original_config_do_not_use: Arc<Config>,
@@ -475,6 +476,14 @@ impl Session {
         state.session_configuration.originator.clone()
     }
 
+    pub(crate) async fn wire_session_id(&self) -> ThreadId {
+        let state = self.state.lock().await;
+        state
+            .session_configuration
+            .wire_session_id
+            .unwrap_or(self.conversation_id)
+    }
+
     #[instrument(name = "session_init", level = "info", skip_all)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(
@@ -571,6 +580,8 @@ impl Session {
                     roots
                 }
             };
+        let wire_session_id = session_configuration.wire_session_id.unwrap_or(thread_id);
+        session_configuration.wire_session_id = Some(wire_session_id);
         let mcp_thread_init = thread_extension_init.clone();
         let thread_extension_data = codex_extension_api::ExtensionData::new_with_init(
             thread_id.to_string(),
@@ -591,6 +602,7 @@ impl Session {
                             session_id,
                             thread_id,
                             extra_config: config.extra_config.clone(),
+                            wire_session_id,
                             forked_from_id,
                             parent_thread_id,
                             source: session_source,
