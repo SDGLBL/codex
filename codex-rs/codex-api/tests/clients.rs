@@ -305,7 +305,6 @@ impl Flaky429Transport {
     }
 }
 
-#[async_trait]
 impl HttpTransport for Flaky429Transport {
     async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
         Err(TransportError::Build("execute should not run".to_string()))

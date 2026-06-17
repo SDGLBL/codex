@@ -526,6 +526,7 @@ async fn build_harness_inner(
             config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
         }
         config.model_auto_compact_token_limit = auto_compact_limit;
+        let _ = config.features.disable(Feature::Apps);
         if hooks {
             trust_discovered_hooks(config);
         }

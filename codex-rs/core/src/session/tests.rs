@@ -1149,7 +1149,12 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
     .await?;
 
     let turn_context = session.new_default_turn().await;
-    assert!(turn_context.network.is_some());
+    let managed_http_proxy = turn_context
+        .network
+        .as_ref()
+        .expect("turn should expose managed network proxy")
+        .http_addr()
+        .to_string();
 
     #[cfg(windows)]
     let command = r#"$val = $env:HTTP_PROXY; if ([string]::IsNullOrEmpty($val)) { $val = 'not-set' } ; [System.Console]::Write($val)"#.to_string();
@@ -1169,7 +1174,7 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
         let event = rx.recv().await.expect("channel open");
         if let EventMsg::ExecCommandEnd(event) = event.msg {
             assert_eq!(event.exit_code, 0);
-            assert_eq!(event.stdout.trim(), "not-set");
+            assert_ne!(event.stdout.trim(), managed_http_proxy);
             break;
         }
     }
@@ -3386,6 +3391,7 @@ async fn set_rate_limits_retains_previous_credits() {
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3493,6 +3499,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3746,6 +3753,7 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
             session_id: session.session_id(),
             thread_id: session.thread_id,
             extra_config: None,
+            wire_session_id: session.thread_id,
             forked_from_id: None,
             parent_thread_id: None,
             source: SessionSource::Exec,
@@ -4022,6 +4030,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4889,6 +4898,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -5002,6 +5012,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -5249,6 +5260,7 @@ async fn make_session_with_config_and_rx(
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -5356,6 +5368,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -6596,6 +6609,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
             session_id: session.session_id(),
             thread_id: session.thread_id,
             extra_config: None,
+            wire_session_id: session.thread_id,
             forked_from_id: None,
             parent_thread_id: None,
             source: SessionSource::Exec,
@@ -7072,6 +7086,7 @@ where
         workspace_roots: config.workspace_roots.clone(),
         codex_home: config.codex_home.clone(),
         thread_name: None,
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,

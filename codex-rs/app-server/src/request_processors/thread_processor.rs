@@ -160,6 +160,17 @@ fn merge_persisted_resume_metadata(
     }
 }
 
+fn rollout_paths_refer_to_same_file(requested_path: &Path, active_path: &Path) -> bool {
+    requested_path == active_path
+        || match (
+            std::fs::canonicalize(requested_path),
+            std::fs::canonicalize(active_path),
+        ) {
+            (Ok(requested_path), Ok(active_path)) => requested_path == active_path,
+            _ => false,
+        }
+}
+
 fn normalize_thread_list_cwd_filters(
     cwd: Option<ThreadListCwdFilter>,
 ) -> Result<Option<Vec<PathBuf>>, JSONRPCErrorError> {
@@ -2882,6 +2893,31 @@ impl ThreadRequestProcessor {
                 )
                 .await?;
             Some((existing_thread_id, existing_thread, source_thread))
+        } else if params.path.is_some() {
+            let source_thread = self
+                .read_stored_thread_for_resume(
+                    &params.thread_id,
+                    params.path.as_ref(),
+                    /*include_history*/ true,
+                )
+                .await?;
+            let existing_thread_id = source_thread.thread_id;
+            if let Ok(existing_thread) = self.thread_manager.get_thread(existing_thread_id).await {
+                if let (Some(requested_path), Some(active_path)) = (
+                    params.path.as_ref(),
+                    existing_thread.rollout_path().as_ref(),
+                ) && !rollout_paths_refer_to_same_file(requested_path, active_path)
+                {
+                    return Err(invalid_request(format!(
+                        "cannot resume running thread {existing_thread_id} with stale path: requested `{}`, active `{}`",
+                        requested_path.display(),
+                        active_path.display()
+                    )));
+                }
+                Some((existing_thread_id, existing_thread, source_thread))
+            } else {
+                None
+            }
         } else {
             let source_thread = self
                 .read_stored_thread_for_resume(

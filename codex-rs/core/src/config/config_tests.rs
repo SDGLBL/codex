@@ -110,6 +110,11 @@ use std::path::Path;
 use std::time::Duration;
 use tempfile::TempDir;
 
+fn create_test_git_dir(root: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(root.join(".git"))?;
+    std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n")
+}
+
 fn stdio_mcp(command: &str) -> McpServerConfig {
     McpServerConfig {
         transport: McpServerTransportConfig::Stdio {
@@ -2482,7 +2487,7 @@ async fn workspace_profile_applies_rules_to_runtime_and_profile_workspace_roots(
     let runtime_root = temp_dir.path().join("backend");
     let profile_root = temp_dir.path().join("shared");
     for root in [&cwd, &runtime_root, &profile_root] {
-        std::fs::create_dir_all(root.join(".git"))?;
+        create_test_git_dir(root)?;
         std::fs::create_dir_all(root.join(".codex"))?;
     }
 
@@ -7281,7 +7286,7 @@ async fn agent_role_file_without_developer_instructions_is_dropped_with_warning(
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    create_test_git_dir(repo_root.path())?;
     std::fs::create_dir_all(&nested_cwd)?;
 
     let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
@@ -7452,7 +7457,7 @@ async fn discovered_agent_role_file_without_name_is_dropped_with_warning() -> st
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    create_test_git_dir(repo_root.path())?;
     std::fs::create_dir_all(&nested_cwd)?;
 
     let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
@@ -7652,7 +7657,7 @@ async fn discovers_multiple_standalone_agent_role_files() -> std::io::Result<()>
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    create_test_git_dir(repo_root.path())?;
     std::fs::create_dir_all(&nested_cwd)?;
 
     let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
@@ -7783,7 +7788,7 @@ async fn mixed_legacy_and_standalone_agent_role_sources_merge_with_precedence()
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    create_test_git_dir(repo_root.path())?;
     std::fs::create_dir_all(&nested_cwd)?;
 
     let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
@@ -7929,7 +7934,7 @@ async fn higher_precedence_agent_role_can_inherit_description_from_lower_layer()
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     let nested_cwd = repo_root.path().join("packages").join("app");
-    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    create_test_git_dir(repo_root.path())?;
     std::fs::create_dir_all(&nested_cwd)?;
 
     let workspace_key = repo_root.path().to_string_lossy().replace('\\', "\\\\");
@@ -10351,7 +10356,7 @@ min_wait_timeout_ms = -1
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"[features.multi_agent_v2]
 enabled = true
-min_wait_timeout_ms = 3600001
+min_wait_timeout_ms = 14400001
 "#,
     )?;
 
@@ -10365,7 +10370,7 @@ min_wait_timeout_ms = 3600001
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
         err.to_string(),
-        "features.multi_agent_v2.min_wait_timeout_ms must be at most 3600000"
+        "features.multi_agent_v2.min_wait_timeout_ms must be at most 14400000"
     );
 
     std::fs::write(
@@ -10393,7 +10398,7 @@ max_wait_timeout_ms = -1
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"[features.multi_agent_v2]
 enabled = true
-max_wait_timeout_ms = 3600001
+max_wait_timeout_ms = 14400001
 "#,
     )?;
 
@@ -10407,7 +10412,7 @@ max_wait_timeout_ms = 3600001
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
         err.to_string(),
-        "features.multi_agent_v2.max_wait_timeout_ms must be at most 3600000"
+        "features.multi_agent_v2.max_wait_timeout_ms must be at most 14400000"
     );
 
     std::fs::write(
