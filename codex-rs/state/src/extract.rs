@@ -341,6 +341,7 @@ mod tests {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: Some(
                         ThreadId::from_string(&Uuid::now_v7().to_string()).expect("thread id"),
                     ),
@@ -542,6 +543,7 @@ mod tests {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: Some(thread_id),
                     forked_from_id: None,
                     parent_thread_id: None,
                     timestamp: "2026-02-26T00:00:00.000Z".to_string(),
