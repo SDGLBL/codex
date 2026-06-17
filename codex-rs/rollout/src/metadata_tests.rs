@@ -119,6 +119,7 @@ async fn extract_metadata_from_rollout_uses_session_meta() {
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        wire_session_id: None,
         forked_from_id: None,
         forked_from_ordinal_exclusive: None,
         parent_thread_id: None,
@@ -218,6 +219,7 @@ async fn extract_metadata_from_rollout_returns_latest_memory_mode() {
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        wire_session_id: None,
         forked_from_id: None,
         forked_from_ordinal_exclusive: None,
         parent_thread_id: None,
@@ -562,6 +564,7 @@ fn write_rollout_in_sessions_with_cwd(
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        wire_session_id: None,
         forked_from_id: None,
         forked_from_ordinal_exclusive: None,
         parent_thread_id: None,
