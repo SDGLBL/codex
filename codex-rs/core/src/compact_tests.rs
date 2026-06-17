@@ -264,7 +264,7 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
 }
 
 #[test]
-fn should_use_remote_compact_task_for_azure_provider() {
+fn should_not_use_remote_compact_task_for_azure_provider() {
     let provider = ModelProviderInfo {
         name: "Azure".into(),
         base_url: Some("https://example.com/openai".into()),
@@ -286,7 +286,7 @@ fn should_use_remote_compact_task_for_azure_provider() {
         supports_websockets: false,
     };
 
-    assert!(should_use_remote_compact_task(&provider));
+    assert!(!should_use_remote_compact_task(&provider));
 }
 #[tokio::test]
 async fn process_compacted_history_replaces_developer_messages() {
