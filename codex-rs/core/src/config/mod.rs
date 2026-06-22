@@ -163,7 +163,6 @@ use toml_edit::DocumentMut;
 
 mod auth_keyring;
 pub mod edit;
-mod installer_profile;
 mod managed_features;
 mod metrics;
 mod network_proxy_spec;
@@ -187,9 +186,6 @@ pub use codex_config::LoaderOverrides;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
 use codex_sandboxing::compatibility_sandbox_policy_for_permission_profile;
 pub use codex_sandboxing::system_bwrap_warning;
-pub use installer_profile::BootstrapInternalProfileResult;
-pub use installer_profile::DEFAULT_INTERNAL_PROFILE_MODEL;
-pub use installer_profile::bootstrap_internal_profile;
 pub use managed_features::ManagedFeatures;
 pub(crate) use metrics::emit_session_start_metrics;
 pub use network_proxy_spec::NetworkProxySpec;
