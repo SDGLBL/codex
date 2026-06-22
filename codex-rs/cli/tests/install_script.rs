@@ -316,8 +316,8 @@ fn read_installed_config(home: &Path) -> Result<TomlValue> {
     read_installed_config_file(home, "config.toml")
 }
 
-fn read_installed_internal_config(home: &Path) -> Result<TomlValue> {
-    read_installed_config_file(home, "internal.config.toml")
+fn read_installed_aidp_config(home: &Path) -> Result<TomlValue> {
+    read_installed_config_file(home, "aidp.config.toml")
 }
 
 fn read_installed_config_file(home: &Path, file_name: &str) -> Result<TomlValue> {
@@ -366,30 +366,6 @@ fn assert_installed_binary_loads_profile(
     );
 }
 
-fn assert_installed_binary_loads_default_config(home: &Path, install_dir: &Path) -> Result<()> {
-    let output = Command::new(install_dir.join("codex"))
-        .arg("debug")
-        .arg("prompt-input")
-        .arg("smoke")
-        .env("HOME", home)
-        .env("CODEX_HOME", home.join(".codex"))
-        .env(
-            "PATH",
-            format!("{}:{}", install_dir.display(), base_test_path()),
-        )
-        .output()?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    anyhow::bail!(
-        "installed codex failed to load default config: status={:?}\nstdout:\n{}\nstderr:\n{}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[test]
 fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Result<()> {
     let platform = PlatformFixture {
@@ -410,9 +386,9 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         /*extra_path_prefix*/ None,
     )?;
     assert!(stdout.contains(platform.platform_label));
-    assert!(stdout.contains("Configured Codex to use internal defaults. Run `codex` to use it."));
+    assert!(stdout.contains("Configured aidp profile. Run `codex --profile aidp` to use it."));
     assert!(stdout.contains("Run now: export PATH="));
-    assert!(stdout.contains("&& codex\n"));
+    assert!(stdout.contains("&& codex --profile aidp\n"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
@@ -420,19 +396,35 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert!(home.path().join(".profile").is_file());
 
     let config = read_installed_config(home.path())?;
+    let aidp_config = read_installed_aidp_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
         None
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "base_url"])
+        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
+        Some("gpt-5.4-2026-03-05")
+    );
+    assert_eq!(
+        value_at_path(&aidp_config, &["model_provider"]).and_then(TomlValue::as_str),
+        Some("azure")
+    );
+    assert_eq!(
+        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(INSTALL_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
-            .and_then(TomlValue::as_str),
+        value_at_path(
+            &aidp_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
         Some(INSTALL_AK)
+    );
+    assert_eq!(
+        value_at_path(&config, &["features", "multi_agent"]).and_then(TomlValue::as_bool),
+        Some(true)
     );
     assert_eq!(
         value_at_path(&config, &["tui", "notification_condition"]),
@@ -447,7 +439,7 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
             .exists()
     );
 
-    assert_installed_binary_loads_default_config(home.path(), &install_dir)?;
+    assert_installed_binary_loads_profile(home.path(), &install_dir, "aidp")?;
     Ok(())
 }
 
@@ -734,7 +726,7 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
         Some("gpt-5.4"),
     )?;
 
-    let config = read_installed_config(home.path())?;
+    let config = read_installed_aidp_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4")
@@ -751,7 +743,7 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
 }
 
 #[test]
-fn install_script_allows_empty_inputs_when_internal_profile_already_exists() -> Result<()> {
+fn install_script_requires_noninteractive_install_config() -> Result<()> {
     let platform = PlatformFixture {
         uname_s: "Linux",
         uname_m: "x86_64",
@@ -761,23 +753,6 @@ fn install_script_allows_empty_inputs_when_internal_profile_already_exists() -> 
     };
     let fixtures = TempDir::new()?;
     let home = TempDir::new()?;
-    let codex_home = home.path().join(".codex");
-    fs::create_dir_all(&codex_home)?;
-    fs::write(
-        codex_home.join("config.toml"),
-        r#"
-profile = "internal"
-
-[profiles.internal]
-model = "existing-model"
-
-[model_providers.azure]
-base_url = "https://existing.example.test/openapi"
-
-[model_providers.azure.query_params]
-ak = "existing-ak"
-"#,
-    )?;
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
 
     let mut command = Command::new("sh");
@@ -793,211 +768,88 @@ ak = "existing-ak"
         .env("PATH", base_test_path())
         .output()?;
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let config = read_installed_config(home.path())?;
-    let internal_config = read_installed_internal_config(home.path())?;
-    assert_eq!(
-        value_at_path(&internal_config, &["model"]).and_then(TomlValue::as_str),
-        Some("existing-model")
-    );
-    assert_eq!(
-        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
-            .and_then(TomlValue::as_str),
-        Some("https://existing.example.test/openapi")
-    );
-    assert_eq!(
-        value_at_path(
-            &internal_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
-        Some("existing-ak")
-    );
-    assert_eq!(value_at_path(&config, &["profile"]), None);
-    assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
-
-    Ok(())
-}
-
-#[test]
-fn install_script_migrates_selected_legacy_profile_name() -> Result<()> {
-    let platform = PlatformFixture {
-        uname_s: "Linux",
-        uname_m: "x86_64",
-        proc_translated: None,
-        vendor_target: "x86_64-unknown-linux-musl",
-        platform_label: "Linux (x64)",
-    };
-    let fixtures = TempDir::new()?;
-    let home = TempDir::new()?;
-    let codex_home = home.path().join(".codex");
-    fs::create_dir_all(&codex_home)?;
-    fs::write(
-        codex_home.join("config.toml"),
-        r#"
-profile = "aidp"
-
-[profiles.aidp]
-model = "existing-aidp-model"
-
-[model_providers.azure]
-base_url = "https://existing-aidp.example.test/openapi"
-
-[model_providers.azure.query_params]
-ak = "existing-aidp-ak"
-"#,
-    )?;
-    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
-
-    let mut command = Command::new("sh");
-    sanitize_installer_env(&mut command);
-    let output = command
-        .arg(installer_script_path()?)
-        .arg(INSTALL_VERSION)
-        .env("HOME", home.path())
-        .env("SHELL", "/bin/sh")
-        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
-        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
-        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
-        .env("PATH", base_test_path())
-        .output()?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let stdout = String::from_utf8(output.stdout)?;
-    assert!(stdout.contains("Configuring aidp profile"));
-    assert!(stdout.contains("Updated aidp profile. Run `codex --profile aidp` to use it."));
-    assert!(stdout.contains("codex --profile aidp"));
-
-    let config = read_installed_config(home.path())?;
-    let aidp_config = read_installed_config_file(home.path(), "aidp.config.toml")?;
-    assert_eq!(value_at_path(&config, &["profile"]), None);
-    assert_eq!(value_at_path(&config, &["profiles", "aidp"]), None);
-    assert_eq!(
-        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
-        Some("existing-aidp-model")
-    );
-    assert_eq!(
-        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
-            .and_then(TomlValue::as_str),
-        Some("https://existing-aidp.example.test/openapi")
-    );
-    assert_eq!(
-        value_at_path(
-            &aidp_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
-        Some("existing-aidp-ak")
-    );
-
-    let install_dir = home.path().join(".local").join("bin");
-    assert_installed_binary_loads_profile(home.path(), &install_dir, "aidp")?;
-
-    Ok(())
-}
-
-#[test]
-fn install_script_skips_bootstrap_when_internal_profile_exists_without_install_overrides()
--> Result<()> {
-    let platform = PlatformFixture {
-        uname_s: "Linux",
-        uname_m: "x86_64",
-        proc_translated: None,
-        vendor_target: "x86_64-unknown-linux-musl",
-        platform_label: "Linux (x64)",
-    };
-    let fixtures = TempDir::new()?;
-    let home = TempDir::new()?;
-    let codex_home = home.path().join(".codex");
-    fs::create_dir_all(&codex_home)?;
-    fs::write(
-        codex_home.join("internal.config.toml"),
-        r#"
-model = "existing-model"
-
-[model_providers.azure]
-base_url = "https://existing.example.test/openapi"
-
-[model_providers.azure.query_params]
-ak = "existing-ak"
-"#,
-    )?;
-
-    let fake_codex_dir = TempDir::new_in(fixtures.path())?;
-    let fake_codex_path = fake_codex_dir.path().join("codex");
-    fs::write(
-        &fake_codex_path,
-        "#!/bin/sh\nset -eu\nif [ \"${1:-}\" = \"debug\" ] && [ \"${2:-}\" = \"bootstrap-internal-profile\" ]; then\n  kill -9 $$\nfi\nexit 0\n",
-    )?;
-    make_executable(&fake_codex_path)?;
-
-    let release_base_url = create_release_fixture_with_codex(
-        fixtures.path(),
-        &platform,
-        &fake_codex_path,
-        INSTALL_TAG,
-    )?;
-
-    let mut command = Command::new("sh");
-    sanitize_installer_env(&mut command);
-    let output = command
-        .arg(installer_script_path()?)
-        .arg(INSTALL_VERSION)
-        .env("HOME", home.path())
-        .env("SHELL", "/bin/sh")
-        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
-        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
-        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
-        .env("PATH", base_test_path())
-        .output()?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let stdout = String::from_utf8(output.stdout)?;
+    assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr)?;
-    assert!(stdout.contains(
-        "Skipping internal profile bootstrap (existing profile detected with no install overrides)"
-    ));
-    assert!(!stderr.contains("failed to configure internal profile automatically"));
-    assert!(!stderr.contains("To complete configuration manually, rerun:"));
+    assert!(
+        stderr.contains("Non-interactive installs must set both CODEX_INSTALL_AK")
+            || stderr.contains("A non-empty Azure base URL and ak are required"),
+        "unexpected stderr:\n{stderr}"
+    );
 
-    let config = read_installed_internal_config(home.path())?;
+    Ok(())
+}
+
+#[test]
+fn install_script_overwrites_existing_aidp_profile() -> Result<()> {
+    let platform = PlatformFixture {
+        uname_s: "Linux",
+        uname_m: "x86_64",
+        proc_translated: None,
+        vendor_target: "x86_64-unknown-linux-musl",
+        platform_label: "Linux (x64)",
+    };
+    let fixtures = TempDir::new()?;
+    let home = TempDir::new()?;
+    let codex_home = home.path().join(".codex");
+    fs::create_dir_all(&codex_home)?;
+    fs::write(
+        codex_home.join("aidp.config.toml"),
+        r#"
+model = "existing-model"
+
+[model_providers.azure]
+base_url = "https://existing.example.test/openapi"
+
+[model_providers.azure.query_params]
+ak = "existing-ak"
+"#,
+    )?;
+    let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
+
+    let mut command = Command::new("sh");
+    sanitize_installer_env(&mut command);
+    let output = command
+        .arg(installer_script_path()?)
+        .arg(INSTALL_VERSION)
+        .env("HOME", home.path())
+        .env("SHELL", "/bin/sh")
+        .env("CODEX_INSTALL_AK", "new-ak")
+        .env(
+            "CODEX_INSTALL_AZURE_BASE_URL",
+            "https://new.example.test/openapi",
+        )
+        .env("CODEX_INSTALL_RELEASE_BASE_URL", &release_base_url)
+        .env("CODEX_INSTALL_UNAME_S", platform.uname_s)
+        .env("CODEX_INSTALL_UNAME_M", platform.uname_m)
+        .env("PATH", base_test_path())
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "installer failed: status={:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.contains("Configured aidp profile. Run `codex --profile aidp` to use it."));
+
+    let config = read_installed_aidp_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
-        Some("existing-model")
+        Some("gpt-5.4-2026-03-05")
     );
     assert_eq!(
         value_at_path(&config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
-        Some("https://existing.example.test/openapi")
+        Some("https://new.example.test/openapi")
     );
     assert_eq!(
         value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
             .and_then(TomlValue::as_str),
-        Some("existing-ak")
+        Some("new-ak")
     );
 
     Ok(())
@@ -1014,23 +866,6 @@ fn install_script_warns_for_crawl_base_url_but_continues() -> Result<()> {
     };
     let fixtures = TempDir::new()?;
     let home = TempDir::new()?;
-    let codex_home = home.path().join(".codex");
-    fs::create_dir_all(&codex_home)?;
-    fs::write(
-        codex_home.join("config.toml"),
-        r#"
-profile = "internal"
-
-[profiles.internal]
-model = "existing-model"
-
-[model_providers.azure]
-base_url = "https://existing.example.test/openapi"
-
-[model_providers.azure.query_params]
-ak = "existing-ak"
-"#,
-    )?;
     let release_base_url = create_release_fixture(fixtures.path(), &platform)?;
     let crawl_url = "https://example.test/gpt/openapi/v2/crawl";
 
@@ -1061,29 +896,26 @@ ak = "existing-ak"
     let stderr = String::from_utf8(output.stderr)?;
     assert!(stderr.contains("CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl"));
 
-    let config = read_installed_config(home.path())?;
-    let internal_config = read_installed_internal_config(home.path())?;
+    let aidp_config = read_installed_aidp_config(home.path())?;
     assert_eq!(
-        value_at_path(&internal_config, &["model_providers", "azure", "base_url"])
+        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(crawl_url)
     );
     assert_eq!(
         value_at_path(
-            &internal_config,
+            &aidp_config,
             &["model_providers", "azure", "query_params", "ak"]
         )
         .and_then(TomlValue::as_str),
         Some("new-ak")
     );
-    assert_eq!(value_at_path(&config, &["profile"]), None);
-    assert_eq!(value_at_path(&config, &["profiles", "internal"]), None);
 
     Ok(())
 }
 
 #[test]
-fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
+fn install_script_does_not_run_installed_codex_to_write_config() -> Result<()> {
     let platform = PlatformFixture {
         uname_s: "Linux",
         uname_m: "x86_64",
@@ -1096,10 +928,7 @@ fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
 
     let fake_codex_dir = TempDir::new_in(fixtures.path())?;
     let fake_codex_path = fake_codex_dir.path().join("codex");
-    fs::write(
-        &fake_codex_path,
-        "#!/bin/sh\nset -eu\nif [ \"${1:-}\" = \"debug\" ] && [ \"${2:-}\" = \"bootstrap-internal-profile\" ]; then\n  kill -9 $$\nfi\nexit 0\n",
-    )?;
+    fs::write(&fake_codex_path, "#!/bin/sh\nexit 137\n")?;
     make_executable(&fake_codex_path)?;
 
     let release_base_url = create_release_fixture_with_codex(
@@ -1134,21 +963,16 @@ fn install_script_warns_and_continues_when_bootstrap_is_killed() -> Result<()> {
     }
 
     let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
-    assert!(stdout.contains("Configuring internal profile"));
-    assert!(stderr.contains(
-        "Warning: failed to configure internal profile automatically (exit 137). Retrying once..."
-    ));
-    assert!(
-        stderr.contains(
-            "Warning: Codex CLI is installed, but internal profile setup did not complete."
-        )
-    );
-    assert!(stderr.contains("To complete configuration manually, rerun:"));
+    assert!(stdout.contains("Configuring aidp profile"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
     assert!(install_dir.join("rg").is_file());
+    let config = read_installed_aidp_config(home.path())?;
+    assert_eq!(
+        value_at_path(&config, &["model_provider"]).and_then(TomlValue::as_str),
+        Some("azure")
+    );
 
     Ok(())
 }
