@@ -15,6 +15,7 @@ INSTALL_AZURE_BASE_URL=""
 INSTALL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 DEFAULT_INSTALL_MODEL="gpt-5.4-2026-03-05"
 INSTALL_MODEL="${CODEX_INSTALL_MODEL:-$DEFAULT_INSTALL_MODEL}"
+INSTALL_PROFILE="aidp"
 CODEX_RUN_COMMAND=""
 path_action="already"
 path_profile=""
@@ -303,7 +304,7 @@ warn_if_crawl_url() {
 }
 
 prompt_for_install_config() {
-  CODEX_RUN_COMMAND="codex"
+  CODEX_RUN_COMMAND="codex --profile $INSTALL_PROFILE"
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
     INSTALL_AK="$CODEX_INSTALL_AK"
@@ -345,7 +346,7 @@ prompt_for_install_config() {
   fi
 
   if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
-    echo "A non-empty Azure base URL and ak are required to configure Codex." >&2
+    echo "A non-empty Azure base URL and ak are required to configure the $INSTALL_PROFILE profile." >&2
     exit 1
   fi
 
@@ -356,21 +357,11 @@ toml_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-write_install_config() {
+write_base_config_defaults() {
   mkdir -p "$INSTALL_CODEX_HOME"
   config_path="$INSTALL_CODEX_HOME/config.toml"
-  model_escaped="$(toml_escape "$INSTALL_MODEL")"
-  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
-  ak_escaped="$(toml_escape "$INSTALL_AK")"
 
-  cat > "$config_path" <<EOF
-model = "$model_escaped"
-model_provider = "azure"
-approval_policy = "on-request"
-sandbox_mode = "danger-full-access"
-model_reasoning_effort = "xhigh"
-plan_mode_reasoning_effort = "xhigh"
-model_max_output_tokens = 64000
+  cat > "$config_path" <<'EOF'
 background_terminal_max_timeout = 72000000
 project_doc_max_bytes = 65536
 suppress_unstable_features_warning = true
@@ -400,6 +391,24 @@ max_depth = 1
 theme = "catppuccin-latte"
 notification_method = "auto"
 notifications = ["agent-turn-complete", "approval-requested"]
+EOF
+}
+
+write_profile_config() {
+  mkdir -p "$INSTALL_CODEX_HOME"
+  profile_config_path="$INSTALL_CODEX_HOME/$INSTALL_PROFILE.config.toml"
+  model_escaped="$(toml_escape "$INSTALL_MODEL")"
+  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
+  ak_escaped="$(toml_escape "$INSTALL_AK")"
+
+  cat > "$profile_config_path" <<EOF
+model = "$model_escaped"
+model_provider = "azure"
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+model_reasoning_effort = "xhigh"
+plan_mode_reasoning_effort = "xhigh"
+model_max_output_tokens = 64000
 
 [model_providers.azure]
 name = "Azure"
@@ -413,7 +422,12 @@ stream_max_retries = 50
 api-version = "2025-04-01-preview"
 ak = "$ak_escaped"
 EOF
-  echo "Configured Codex to use internal defaults. Run \`codex\` to use it."
+}
+
+write_install_config() {
+  write_base_config_defaults
+  write_profile_config
+  echo "Configured $INSTALL_PROFILE profile. Run \`codex --profile $INSTALL_PROFILE\` to use it."
 }
 
 uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
@@ -520,7 +534,7 @@ chmod 0755 "$INSTALL_DIR/rg"
 
 prompt_for_install_config
 
-step "Configuring Codex defaults"
+step "Configuring $INSTALL_PROFILE profile"
 write_install_config
 
 add_to_path
