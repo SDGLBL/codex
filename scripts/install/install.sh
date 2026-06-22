@@ -12,10 +12,9 @@ LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPO
 INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
+INSTALL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 DEFAULT_INSTALL_MODEL="gpt-5.4-2026-03-05"
-DEFAULT_INSTALL_PROFILE="aidp"
 INSTALL_MODEL="${CODEX_INSTALL_MODEL:-$DEFAULT_INSTALL_MODEL}"
-INSTALL_PROFILE="${CODEX_INSTALL_PROFILE:-$DEFAULT_INSTALL_PROFILE}"
 CODEX_RUN_COMMAND=""
 path_action="already"
 path_profile=""
@@ -49,12 +48,20 @@ download_file() {
   output="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$output"
+    if [ -t 2 ]; then
+      curl -fL --progress-bar "$url" -o "$output"
+    else
+      curl -fsSL "$url" -o "$output"
+    fi
     return
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url"
+    if [ -t 2 ]; then
+      wget -O "$output" "$url"
+    else
+      wget -q -O "$output" "$url"
+    fi
     return
   fi
 
@@ -295,27 +302,8 @@ warn_if_crawl_url() {
   esac
 }
 
-validate_install_profile() {
-  case "$INSTALL_PROFILE" in
-    ""|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*)
-      echo "CODEX_INSTALL_PROFILE must be a plain profile name containing only letters, numbers, hyphens, and underscores." >&2
-      exit 1
-      ;;
-  esac
-}
-
-config_file_has_settings() {
-  [ -f "$1" ] || return 1
-  grep -Eq '^[[:space:]]*[^#[:space:]]' "$1"
-}
-
-resolve_install_profile() {
-  validate_install_profile
-}
-
 prompt_for_install_config() {
-  resolve_install_profile
-  CODEX_RUN_COMMAND="codex --profile $INSTALL_PROFILE"
+  CODEX_RUN_COMMAND="codex"
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
     INSTALL_AK="$CODEX_INSTALL_AK"
@@ -331,7 +319,7 @@ prompt_for_install_config() {
 
   if [ ! -r /dev/tty ] || [ ! -w /dev/tty ] || ! { printf '' >/dev/tty; } 2>/dev/null; then
     echo "Non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
-    echo "  CODEX_INSTALL_PROFILE=$INSTALL_PROFILE CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
+    echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
     exit 1
   fi
 
@@ -357,7 +345,7 @@ prompt_for_install_config() {
   fi
 
   if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
-    echo "A non-empty Azure base URL and ak are required to configure the $INSTALL_PROFILE profile." >&2
+    echo "A non-empty Azure base URL and ak are required to configure Codex." >&2
     exit 1
   fi
 
@@ -368,14 +356,21 @@ toml_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-write_base_config_defaults() {
-  mkdir -p "$HOME/.codex"
-  config_path="$HOME/.codex/config.toml"
-  if config_file_has_settings "$config_path"; then
-    return
-  fi
+write_install_config() {
+  mkdir -p "$INSTALL_CODEX_HOME"
+  config_path="$INSTALL_CODEX_HOME/config.toml"
+  model_escaped="$(toml_escape "$INSTALL_MODEL")"
+  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
+  ak_escaped="$(toml_escape "$INSTALL_AK")"
 
-  cat > "$config_path" <<'EOF'
+  cat > "$config_path" <<EOF
+model = "$model_escaped"
+model_provider = "azure"
+approval_policy = "on-request"
+sandbox_mode = "danger-full-access"
+model_reasoning_effort = "xhigh"
+plan_mode_reasoning_effort = "xhigh"
+model_max_output_tokens = 64000
 background_terminal_max_timeout = 72000000
 project_doc_max_bytes = 65536
 suppress_unstable_features_warning = true
@@ -385,32 +380,26 @@ inherit = "all"
 ignore_default_excludes = true
 
 [features]
-multi_agent = true
-voice_transcription = true
+apps = false
+guardian_approval = false
 prevent_idle_sleep = true
+tui_app_server = false
+hooks = true
+multi_agent = true
+voice_transcription = false
+enable_fanout = true
+goals = true
+remote_connections = true
+js_repl = false
+
+[agents]
+max_threads = 8
+max_depth = 1
 
 [tui]
 theme = "catppuccin-latte"
 notification_method = "auto"
 notifications = ["agent-turn-complete", "approval-requested"]
-EOF
-}
-
-write_profile_config() {
-  mkdir -p "$HOME/.codex"
-  profile_config_path="$HOME/.codex/$INSTALL_PROFILE.config.toml"
-  model_escaped="$(toml_escape "$INSTALL_MODEL")"
-  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
-  ak_escaped="$(toml_escape "$INSTALL_AK")"
-
-  cat > "$profile_config_path" <<EOF
-model = "$model_escaped"
-model_provider = "azure"
-sandbox_mode = "danger-full-access"
-approval_policy = "on-request"
-model_reasoning_effort = "xhigh"
-plan_mode_reasoning_effort = "xhigh"
-model_max_output_tokens = 64000
 
 [model_providers.azure]
 name = "Azure"
@@ -424,12 +413,7 @@ stream_max_retries = 50
 api-version = "2025-04-01-preview"
 ak = "$ak_escaped"
 EOF
-}
-
-write_install_config() {
-  write_base_config_defaults
-  write_profile_config
-  echo "Configured $INSTALL_PROFILE profile. Run \`codex --profile $INSTALL_PROFILE\` to use it."
+  echo "Configured Codex to use internal defaults. Run \`codex\` to use it."
 }
 
 uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
@@ -536,7 +520,7 @@ chmod 0755 "$INSTALL_DIR/rg"
 
 prompt_for_install_config
 
-step "Configuring $INSTALL_PROFILE profile"
+step "Configuring Codex defaults"
 write_install_config
 
 add_to_path
