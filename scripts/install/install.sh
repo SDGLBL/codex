@@ -12,10 +12,11 @@ LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPO
 INSTALL_DIR=""
 INSTALL_AK=""
 INSTALL_AZURE_BASE_URL=""
-INSTALL_MODEL="${CODEX_INSTALL_MODEL:-}"
-INSTALL_PROFILE="${CODEX_INSTALL_PROFILE:-}"
+DEFAULT_INSTALL_MODEL="gpt-5.4-2026-03-05"
+DEFAULT_INSTALL_PROFILE="aidp"
+INSTALL_MODEL="${CODEX_INSTALL_MODEL:-$DEFAULT_INSTALL_MODEL}"
+INSTALL_PROFILE="${CODEX_INSTALL_PROFILE:-$DEFAULT_INSTALL_PROFILE}"
 CODEX_RUN_COMMAND=""
-SHOULD_BOOTSTRAP_INTERNAL_PROFILE="true"
 path_action="already"
 path_profile=""
 
@@ -303,98 +304,18 @@ validate_install_profile() {
   esac
 }
 
-detect_legacy_profile_selector() {
-  config_path="$HOME/.codex/config.toml"
-  if [ ! -f "$config_path" ]; then
-    return
-  fi
-
-  sed -n 's/^[[:space:]]*profile[[:space:]]*=[[:space:]]*"\([abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-][abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*\)"[[:space:]]*$/\1/p' "$config_path" | head -n 1
-}
-
-detect_single_profile_config() {
-  count=0
-  found_profile=""
-  for candidate in "$HOME/.codex"/*.config.toml; do
-    [ -f "$candidate" ] || continue
-    profile_name="${candidate##*/}"
-    profile_name="${profile_name%.config.toml}"
-    case "$profile_name" in
-      ""|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*)
-        continue
-        ;;
-    esac
-    count=$((count + 1))
-    found_profile="$profile_name"
-  done
-
-  if [ "$count" -eq 1 ]; then
-    printf '%s\n' "$found_profile"
-  fi
-}
-
-detect_single_legacy_profile_table() {
-  config_path="$HOME/.codex/config.toml"
-  if [ ! -f "$config_path" ]; then
-    return
-  fi
-
-  count=0
-  found_profile=""
-  for profile_name in $(sed -n 's/^[[:space:]]*\[profiles\.\([abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-][abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-]*\)\][[:space:]]*$/\1/p' "$config_path"); do
-    count=$((count + 1))
-    found_profile="$profile_name"
-  done
-
-  if [ "$count" -eq 1 ]; then
-    printf '%s\n' "$found_profile"
-  fi
-}
-
 config_file_has_settings() {
   [ -f "$1" ] || return 1
   grep -Eq '^[[:space:]]*[^#[:space:]]' "$1"
 }
 
 resolve_install_profile() {
-  if [ -n "$INSTALL_PROFILE" ]; then
-    validate_install_profile
-    return
-  fi
-
-  INSTALL_PROFILE="$(detect_legacy_profile_selector)"
-  if [ -z "$INSTALL_PROFILE" ]; then
-    INSTALL_PROFILE="$(detect_single_profile_config)"
-  fi
-  if [ -z "$INSTALL_PROFILE" ]; then
-    INSTALL_PROFILE="$(detect_single_legacy_profile_table)"
-  fi
-  if [ -z "$INSTALL_PROFILE" ]; then
-    INSTALL_PROFILE="internal"
-  fi
   validate_install_profile
 }
 
 prompt_for_install_config() {
   resolve_install_profile
-  has_installer_profile="false"
-  has_legacy_installer_profile="false"
-  config_path="$HOME/.codex/config.toml"
-  profile_config_path="$HOME/.codex/$INSTALL_PROFILE.config.toml"
-  if [ -f "$profile_config_path" ]; then
-    has_installer_profile="true"
-  fi
-  if [ -f "$config_path" ] && {
-    grep -Eq "^[[:space:]]*profile[[:space:]]*=[[:space:]]*\"$INSTALL_PROFILE\"[[:space:]]*$" "$config_path" ||
-      grep -Eq "^[[:space:]]*\[profiles\.$INSTALL_PROFILE\][[:space:]]*$" "$config_path"
-  }; then
-    has_legacy_installer_profile="true"
-  fi
-  if [ "$INSTALL_PROFILE" = "internal" ] && [ "$has_installer_profile" = "false" ] && [ "$has_legacy_installer_profile" = "false" ] && ! config_file_has_settings "$config_path"; then
-    CODEX_RUN_COMMAND="codex"
-  else
-    CODEX_RUN_COMMAND="codex --profile $INSTALL_PROFILE"
-  fi
+  CODEX_RUN_COMMAND="codex --profile $INSTALL_PROFILE"
 
   if [ -n "${CODEX_INSTALL_AK:-}" ]; then
     INSTALL_AK="$CODEX_INSTALL_AK"
@@ -403,37 +324,13 @@ prompt_for_install_config() {
     INSTALL_AZURE_BASE_URL="$CODEX_INSTALL_AZURE_BASE_URL"
   fi
 
-  has_bootstrap_overrides="false"
-  if [ -n "$INSTALL_AK" ] || [ -n "$INSTALL_AZURE_BASE_URL" ] || [ -n "$INSTALL_MODEL" ]; then
-    has_bootstrap_overrides="true"
-  fi
-
-  if [ "$has_installer_profile" = "true" ] && [ "$has_legacy_installer_profile" = "false" ] && [ "$has_bootstrap_overrides" = "false" ]; then
-    SHOULD_BOOTSTRAP_INTERNAL_PROFILE="false"
-    return
-  fi
-
   if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
     warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
     return
   fi
 
-  if [ "$has_installer_profile" = "true" ]; then
-    if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
-      warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
-    fi
-    return
-  fi
-
-  if [ "$has_legacy_installer_profile" = "true" ]; then
-    if [ -n "$INSTALL_AZURE_BASE_URL" ]; then
-      warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
-    fi
-    return
-  fi
-
-  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
-    echo "When bootstrapping a new $INSTALL_PROFILE profile, non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ] || ! { printf '' >/dev/tty; } 2>/dev/null; then
+    echo "Non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
     echo "  CODEX_INSTALL_PROFILE=$INSTALL_PROFILE CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
     exit 1
   fi
@@ -467,23 +364,72 @@ prompt_for_install_config() {
   warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
 }
 
-run_internal_profile_bootstrap() {
-  mkdir -p "$HOME/.codex"
-  if [ -n "$INSTALL_MODEL" ]; then
-    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --model "$INSTALL_MODEL" --profile "$INSTALL_PROFILE"
-  else
-    printf '%s\n' "$INSTALL_AK" | CODEX_HOME="$HOME/.codex" "$INSTALL_DIR/codex" debug bootstrap-internal-profile --ak-stdin --azure-base-url "$INSTALL_AZURE_BASE_URL" --profile "$INSTALL_PROFILE"
-  fi
+toml_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-print_manual_bootstrap_hint() {
-  if [ -n "$INSTALL_MODEL" ]; then
-    echo "To complete configuration manually, rerun:" >&2
-    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --model \"$INSTALL_MODEL\" --profile \"$INSTALL_PROFILE\"" >&2
-  else
-    echo "To complete configuration manually, rerun:" >&2
-    echo "  printenv CODEX_INSTALL_AK | \"$INSTALL_DIR/codex\" debug bootstrap-internal-profile --ak-stdin --azure-base-url \"$INSTALL_AZURE_BASE_URL\" --profile \"$INSTALL_PROFILE\"" >&2
+write_base_config_defaults() {
+  mkdir -p "$HOME/.codex"
+  config_path="$HOME/.codex/config.toml"
+  if config_file_has_settings "$config_path"; then
+    return
   fi
+
+  cat > "$config_path" <<'EOF'
+background_terminal_max_timeout = 72000000
+project_doc_max_bytes = 65536
+suppress_unstable_features_warning = true
+
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+
+[features]
+multi_agent = true
+voice_transcription = true
+prevent_idle_sleep = true
+
+[tui]
+theme = "catppuccin-latte"
+notification_method = "auto"
+notifications = ["agent-turn-complete", "approval-requested"]
+EOF
+}
+
+write_profile_config() {
+  mkdir -p "$HOME/.codex"
+  profile_config_path="$HOME/.codex/$INSTALL_PROFILE.config.toml"
+  model_escaped="$(toml_escape "$INSTALL_MODEL")"
+  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
+  ak_escaped="$(toml_escape "$INSTALL_AK")"
+
+  cat > "$profile_config_path" <<EOF
+model = "$model_escaped"
+model_provider = "azure"
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+model_reasoning_effort = "xhigh"
+plan_mode_reasoning_effort = "xhigh"
+model_max_output_tokens = 64000
+
+[model_providers.azure]
+name = "Azure"
+base_url = "$base_url_escaped"
+wire_api = "responses"
+request_max_retries = 50
+retry_429 = true
+stream_max_retries = 50
+
+[model_providers.azure.query_params]
+api-version = "2025-04-01-preview"
+ak = "$ak_escaped"
+EOF
+}
+
+write_install_config() {
+  write_base_config_defaults
+  write_profile_config
+  echo "Configured $INSTALL_PROFILE profile. Run \`codex --profile $INSTALL_PROFILE\` to use it."
 }
 
 uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
@@ -590,25 +536,8 @@ chmod 0755 "$INSTALL_DIR/rg"
 
 prompt_for_install_config
 
-if [ "$SHOULD_BOOTSTRAP_INTERNAL_PROFILE" = "true" ]; then
-  step "Configuring $INSTALL_PROFILE profile"
-  if run_internal_profile_bootstrap; then
-    :
-  else
-    bootstrap_exit="$?"
-    echo "Warning: failed to configure $INSTALL_PROFILE profile automatically (exit ${bootstrap_exit}). Retrying once..." >&2
-    if run_internal_profile_bootstrap; then
-      echo "Warning: $INSTALL_PROFILE profile bootstrap succeeded on retry." >&2
-    else
-      bootstrap_retry_exit="$?"
-      echo "Warning: failed to configure $INSTALL_PROFILE profile automatically after retry (exit ${bootstrap_retry_exit})." >&2
-      echo "Warning: Codex CLI is installed, but $INSTALL_PROFILE profile setup did not complete." >&2
-      print_manual_bootstrap_hint
-    fi
-  fi
-else
-  step "Skipping $INSTALL_PROFILE profile bootstrap (existing profile detected with no install overrides)"
-fi
+step "Configuring $INSTALL_PROFILE profile"
+write_install_config
 
 add_to_path
 
