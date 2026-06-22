@@ -295,6 +295,7 @@ fn responses_request_properties_match(
         service_tier: previous_service_tier,
         prompt_cache_key: previous_prompt_cache_key,
         text: previous_text,
+        max_output_tokens: previous_max_output_tokens,
         client_metadata: _,
     } = previous;
     let ResponsesApiRequest {
@@ -311,6 +312,7 @@ fn responses_request_properties_match(
         service_tier: current_service_tier,
         prompt_cache_key: current_prompt_cache_key,
         text: current_text,
+        max_output_tokens: current_max_output_tokens,
         client_metadata: _,
     } = current;
 
@@ -326,6 +328,7 @@ fn responses_request_properties_match(
         && previous_service_tier == current_service_tier
         && previous_prompt_cache_key == current_prompt_cache_key
         && previous_text == current_text
+        && previous_max_output_tokens == current_max_output_tokens
 }
 
 impl WebsocketSession {
