@@ -149,7 +149,6 @@ fn run_installer_with_model(
         extra_path_prefix,
         "/bin/sh",
         install_model,
-        /*install_profile*/ None,
     )
 }
 
@@ -160,7 +159,6 @@ fn run_installer_with_shell(
     extra_path_prefix: Option<&Path>,
     shell: &str,
     install_model: Option<&str>,
-    install_profile: Option<&str>,
 ) -> Result<String> {
     let mut path = base_test_path();
     if let Some(prefix) = extra_path_prefix {
@@ -182,9 +180,6 @@ fn run_installer_with_shell(
         .env("PATH", path);
     if let Some(install_model) = install_model {
         command.env("CODEX_INSTALL_MODEL", install_model);
-    }
-    if let Some(install_profile) = install_profile {
-        command.env("CODEX_INSTALL_PROFILE", install_profile);
     }
     if let Some(proc_translated) = platform.proc_translated {
         command.env("CODEX_INSTALL_PROC_TRANSLATED", proc_translated);
@@ -691,7 +686,6 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
         /*extra_path_prefix*/ None,
         "/bin/zsh",
         /*install_model*/ None,
-        /*install_profile*/ None,
     )?;
 
     let zprofile_path = home.path().join(".zprofile");
