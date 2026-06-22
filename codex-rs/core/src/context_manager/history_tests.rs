@@ -1117,11 +1117,13 @@ fn record_items_preserves_code_mode_exec_output_after_exec_budgeting() {
         call_id: "call-code-mode-exec".to_string(),
         name: "exec".to_string(),
         input: "// @exec: {\"max_output_tokens\": 20000}\ntext(result.output);".to_string(),
+        metadata: None,
     };
     let output = ResponseItem::CustomToolCallOutput {
         call_id: "call-code-mode-exec".to_string(),
         name: None,
         output: FunctionCallOutputPayload::from_text(long_output.clone()),
+        metadata: None,
     };
 
     history.record_items([&call, &output], policy);
