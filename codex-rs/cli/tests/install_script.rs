@@ -311,10 +311,6 @@ fn read_installed_config(home: &Path) -> Result<TomlValue> {
     read_installed_config_file(home, "config.toml")
 }
 
-fn read_installed_aidp_config(home: &Path) -> Result<TomlValue> {
-    read_installed_config_file(home, "aidp.config.toml")
-}
-
 fn read_installed_config_file(home: &Path, file_name: &str) -> Result<TomlValue> {
     let config_path = home.join(".codex").join(file_name);
     let serialized = fs::read_to_string(&config_path)
@@ -331,14 +327,8 @@ fn value_at_path<'a>(value: &'a TomlValue, segments: &[&str]) -> Option<&'a Toml
     Some(current)
 }
 
-fn assert_installed_binary_loads_profile(
-    home: &Path,
-    install_dir: &Path,
-    profile: &str,
-) -> Result<()> {
+fn assert_installed_binary_loads_default_config(home: &Path, install_dir: &Path) -> Result<()> {
     let output = Command::new(install_dir.join("codex"))
-        .arg("--profile")
-        .arg(profile)
         .arg("debug")
         .arg("prompt-input")
         .arg("smoke")
@@ -354,7 +344,7 @@ fn assert_installed_binary_loads_profile(
     }
 
     anyhow::bail!(
-        "installed codex failed to load {profile} profile: status={:?}\nstdout:\n{}\nstderr:\n{}",
+        "installed codex failed to load default config: status={:?}\nstdout:\n{}\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
@@ -381,9 +371,11 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
         /*extra_path_prefix*/ None,
     )?;
     assert!(stdout.contains(platform.platform_label));
-    assert!(stdout.contains("Configured aidp profile. Run `codex --profile aidp` to use it."));
+    assert!(
+        stdout.contains("Configured config.toml. Run `codex` to use the internal Azure provider.")
+    );
     assert!(stdout.contains("Run now: export PATH="));
-    assert!(stdout.contains("&& codex --profile aidp\n"));
+    assert!(stdout.contains("&& codex\n"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
@@ -391,30 +383,26 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert!(home.path().join(".profile").is_file());
 
     let config = read_installed_config(home.path())?;
-    let aidp_config = read_installed_aidp_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["profile"]).and_then(TomlValue::as_str),
         None
     );
     assert_eq!(
-        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
     );
     assert_eq!(
-        value_at_path(&aidp_config, &["model_provider"]).and_then(TomlValue::as_str),
+        value_at_path(&config, &["model_provider"]).and_then(TomlValue::as_str),
         Some("azure")
     );
     assert_eq!(
-        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(INSTALL_AZURE_BASE_URL)
     );
     assert_eq!(
-        value_at_path(
-            &aidp_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
         Some(INSTALL_AK)
     );
     assert_eq!(
@@ -433,8 +421,9 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
             .join("internal.config.toml")
             .exists()
     );
+    assert!(!home.path().join(".codex").join("aidp.config.toml").exists());
 
-    assert_installed_binary_loads_profile(home.path(), &install_dir, "aidp")?;
+    assert_installed_binary_loads_default_config(home.path(), &install_dir)?;
     Ok(())
 }
 
@@ -720,7 +709,7 @@ fn install_script_honors_codex_install_model_override() -> Result<()> {
         Some("gpt-5.4"),
     )?;
 
-    let config = read_installed_aidp_config(home.path())?;
+    let config = read_installed_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4")
@@ -774,7 +763,7 @@ fn install_script_requires_noninteractive_install_config() -> Result<()> {
 }
 
 #[test]
-fn install_script_overwrites_existing_aidp_profile() -> Result<()> {
+fn install_script_leaves_existing_aidp_profile_untouched() -> Result<()> {
     let platform = PlatformFixture {
         uname_s: "Linux",
         uname_m: "x86_64",
@@ -828,9 +817,12 @@ ak = "existing-ak"
     }
 
     let stdout = String::from_utf8(output.stdout)?;
-    assert!(stdout.contains("Configured aidp profile. Run `codex --profile aidp` to use it."));
+    assert!(
+        stdout.contains("Configured config.toml. Run `codex` to use the internal Azure provider.")
+    );
+    assert!(!stdout.contains("aidp"));
 
-    let config = read_installed_aidp_config(home.path())?;
+    let config = read_installed_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model"]).and_then(TomlValue::as_str),
         Some("gpt-5.4-2026-03-05")
@@ -844,6 +836,24 @@ ak = "existing-ak"
         value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
             .and_then(TomlValue::as_str),
         Some("new-ak")
+    );
+    let aidp_config = read_installed_config_file(home.path(), "aidp.config.toml")?;
+    assert_eq!(
+        value_at_path(&aidp_config, &["model"]).and_then(TomlValue::as_str),
+        Some("existing-model")
+    );
+    assert_eq!(
+        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
+            .and_then(TomlValue::as_str),
+        Some("https://existing.example.test/openapi")
+    );
+    assert_eq!(
+        value_at_path(
+            &aidp_config,
+            &["model_providers", "azure", "query_params", "ak"]
+        )
+        .and_then(TomlValue::as_str),
+        Some("existing-ak")
     );
 
     Ok(())
@@ -890,18 +900,15 @@ fn install_script_warns_for_crawl_base_url_but_continues() -> Result<()> {
     let stderr = String::from_utf8(output.stderr)?;
     assert!(stderr.contains("CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl"));
 
-    let aidp_config = read_installed_aidp_config(home.path())?;
+    let config = read_installed_config(home.path())?;
     assert_eq!(
-        value_at_path(&aidp_config, &["model_providers", "azure", "base_url"])
+        value_at_path(&config, &["model_providers", "azure", "base_url"])
             .and_then(TomlValue::as_str),
         Some(crawl_url)
     );
     assert_eq!(
-        value_at_path(
-            &aidp_config,
-            &["model_providers", "azure", "query_params", "ak"]
-        )
-        .and_then(TomlValue::as_str),
+        value_at_path(&config, &["model_providers", "azure", "query_params", "ak"])
+            .and_then(TomlValue::as_str),
         Some("new-ak")
     );
 
@@ -957,12 +964,12 @@ fn install_script_does_not_run_installed_codex_to_write_config() -> Result<()> {
     }
 
     let stdout = String::from_utf8(output.stdout)?;
-    assert!(stdout.contains("Configuring aidp profile"));
+    assert!(stdout.contains("Configuring config.toml"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
     assert!(install_dir.join("rg").is_file());
-    let config = read_installed_aidp_config(home.path())?;
+    let config = read_installed_config(home.path())?;
     assert_eq!(
         value_at_path(&config, &["model_provider"]).and_then(TomlValue::as_str),
         Some("azure")
