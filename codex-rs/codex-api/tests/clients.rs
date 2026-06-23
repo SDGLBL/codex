@@ -387,6 +387,7 @@ async fn responses_client_stream_request_preserves_item_ids() -> Result<()> {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
         client_metadata: None,
     };
     let expected = serde_json::to_value(&request)?;
@@ -545,11 +546,7 @@ async fn responses_request_omits_absent_max_output_tokens() -> Result<()> {
 
     let requests = state.take_stream_requests();
     assert_eq!(requests.len(), 1);
-    let body = requests[0]
-        .body
-        .as_ref()
-        .and_then(RequestBody::json)
-        .expect("request body should be JSON");
+    let body: serde_json::Value = serde_json::from_slice(request_body_bytes(&requests[0]))?;
     assert_eq!(body.get("max_output_tokens"), None);
 
     Ok(())
