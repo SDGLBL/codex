@@ -472,7 +472,7 @@ async fn process_compacted_history_drops_legacy_warnings() {
 async fn process_compacted_history_keeps_assistant_with_encrypted_reasoning() {
     let compacted_history = vec![
         ResponseItem::Reasoning {
-            id: "rs_123".to_string(),
+            id: Some("rs_123".to_string()),
             summary: vec![ReasoningItemReasoningSummary::SummaryText {
                 text: "thinking".to_string(),
             }],
@@ -526,7 +526,7 @@ async fn process_compacted_history_converts_assistant_without_reasoning_to_summa
 async fn process_compacted_history_drops_reasoning_without_encrypted_content() {
     let compacted_history = vec![
         ResponseItem::Reasoning {
-            id: "rs_123".to_string(),
+            id: Some("rs_123".to_string()),
             summary: vec![ReasoningItemReasoningSummary::SummaryText {
                 text: "thinking".to_string(),
             }],
