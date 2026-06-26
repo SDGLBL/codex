@@ -145,7 +145,8 @@ mod tests {
     }
 
     fn init_test_repo(repo_path: &Path) {
-        run_git_in(repo_path, &["init", "--initial-branch=main"]);
+        run_git_in(repo_path, &["init"]);
+        run_git_in(repo_path, &["checkout", "-B", "main"]);
         run_git_in(repo_path, &["config", "core.autocrlf", "false"]);
     }
 
@@ -202,7 +203,8 @@ mod tests {
         std::fs::create_dir_all(&remote)?;
 
         run_git_in(&remote, &["init", "--bare"]);
-        run_git_in(&repo, &["init", "--initial-branch=main"]);
+        run_git_in(&repo, &["init"]);
+        run_git_in(&repo, &["checkout", "-B", "main"]);
         run_git_in(&repo, &["config", "core.autocrlf", "false"]);
 
         std::fs::write(repo.join("base.txt"), "base\n")?;
