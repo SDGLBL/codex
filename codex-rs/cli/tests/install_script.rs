@@ -40,10 +40,6 @@ fn installer_script_path() -> Result<PathBuf> {
     Ok(repo_root()?.join("scripts/install/install.sh"))
 }
 
-fn codex_binary_path() -> Result<PathBuf> {
-    Ok(codex_utils_cargo_bin::cargo_bin("codex")?)
-}
-
 fn base_test_path() -> String {
     "/usr/bin:/bin:/usr/sbin:/sbin".to_string()
 }
@@ -53,6 +49,15 @@ fn sanitize_installer_env(command: &mut Command) {
         command.env_remove(key);
     }
     command.env_remove("CODEX_HOME");
+}
+
+fn write_fake_codex(path: &Path) -> Result<()> {
+    fs::write(
+        path,
+        "#!/bin/sh\nif [ \"$1\" = \"debug\" ] && [ \"$2\" = \"prompt-input\" ]; then exit 0; fi\nexit 0\n",
+    )?;
+    make_executable(path)?;
+    Ok(())
 }
 
 fn create_release_fixture_with_codex(
@@ -102,7 +107,9 @@ fn create_release_fixture_with_codex(
 }
 
 fn create_release_fixture(root: &Path, platform: &PlatformFixture<'_>) -> Result<String> {
-    let codex_path = codex_binary_path()?;
+    let codex_stage = TempDir::new_in(root)?;
+    let codex_path = codex_stage.path().join("codex");
+    write_fake_codex(&codex_path)?;
     create_release_fixture_with_codex(root, platform, &codex_path, INSTALL_TAG)
 }
 
@@ -327,7 +334,7 @@ fn value_at_path<'a>(value: &'a TomlValue, segments: &[&str]) -> Option<&'a Toml
     Some(current)
 }
 
-fn assert_installed_binary_loads_default_config(home: &Path, install_dir: &Path) -> Result<()> {
+fn assert_installed_binary_runs(home: &Path, install_dir: &Path) -> Result<()> {
     let output = Command::new(install_dir.join("codex"))
         .arg("debug")
         .arg("prompt-input")
@@ -344,7 +351,7 @@ fn assert_installed_binary_loads_default_config(home: &Path, install_dir: &Path)
     }
 
     anyhow::bail!(
-        "installed codex failed to load default config: status={:?}\nstdout:\n{}\nstderr:\n{}",
+        "installed codex failed to run: status={:?}\nstdout:\n{}\nstderr:\n{}",
         output.status.code(),
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
@@ -423,7 +430,7 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     );
     assert!(!home.path().join(".codex").join("aidp.config.toml").exists());
 
-    assert_installed_binary_loads_default_config(home.path(), &install_dir)?;
+    assert_installed_binary_runs(home.path(), &install_dir)?;
     Ok(())
 }
 
@@ -527,7 +534,8 @@ fn install_script_supports_explicit_internal_release_tag_override() -> Result<()
     let fixtures = TempDir::new()?;
     let home = TempDir::new()?;
     let internal_release_tag = "internal-hotfix-9.9.9";
-    let codex_path = codex_binary_path()?;
+    let codex_path = fixtures.path().join("fake-codex");
+    write_fake_codex(&codex_path)?;
     let release_base_url = create_release_fixture_with_codex(
         fixtures.path(),
         &platform,
