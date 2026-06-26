@@ -78,6 +78,9 @@ jobs:
     defaults:
       run:
         working-directory: codex-rs
+    env:
+      # macOS release packages archive packed dSYM bundles before stripping.
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: ${{ contains(matrix.target, 'apple-darwin') && 'packed' || 'off' }}
     strategy:
       fail-fast: false
       matrix:
@@ -104,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -y
-          packages=(pkg-config libcap-dev)
+          packages=(binutils pkg-config libcap-dev)
           if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-musl" ]]; then
             packages+=(libubsan1)
           fi
