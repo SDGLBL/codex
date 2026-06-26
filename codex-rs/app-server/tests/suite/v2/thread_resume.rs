@@ -2040,7 +2040,7 @@ stream_max_retries = 0
     );
     let head_branch = Command::new("git")
         .current_dir(&repo_path)
-        .args(["branch", "--show-current"])
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()?;
     assert_eq!(
         String::from_utf8(head_branch.stdout)?.trim(),
