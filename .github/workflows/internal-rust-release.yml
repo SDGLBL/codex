@@ -249,6 +249,13 @@ jobs:
           dest="dist/${{ matrix.target }}"
           mkdir -p "${dest}"
 
+          bash "${GITHUB_WORKSPACE}/.github/scripts/archive-release-symbols-and-strip-binaries.sh" \
+            --target "${{ matrix.target }}" \
+            --artifact-name "${{ matrix.target }}" \
+            --release-dir "${release_dir}" \
+            --archive-dir "${dest}" \
+            --binaries "codex codex-responses-api-proxy"
+
           cp "${release_dir}/codex" "${dest}/codex"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
