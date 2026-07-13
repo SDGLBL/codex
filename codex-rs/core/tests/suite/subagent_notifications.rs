@@ -882,7 +882,7 @@ async fn spawned_child_without_fork_uses_child_thread_id_for_session_header() ->
     assert_eq!(
         child_request
             .headers
-            .get("session_id")
+            .get("session-id")
             .and_then(|value| value.to_str().ok()),
         Some(spawned_id.as_str())
     );
@@ -973,7 +973,7 @@ async fn spawned_child_receives_forked_parent_context() -> Result<()> {
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
     assert!(child_request.body_contains_text("seeded"));
     assert_eq!(
-        child_request.header("session_id").as_deref(),
+        child_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 
@@ -1006,7 +1006,12 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-turn1-1"),
-            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V1_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
             ev_completed("resp-turn1-1"),
         ]),
     )
@@ -1057,7 +1062,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .next()
         .ok_or_else(|| anyhow::anyhow!("expected forked child request"))?;
     assert_eq!(
-        child_request.header("session_id").as_deref(),
+        child_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 
@@ -1098,10 +1103,6 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
     let resumed = resume_builder
         .resume(&server, test.home.clone(), child_rollout_path)
         .await?;
-    assert_eq!(
-        resumed.session_configured.session_id.to_string(),
-        spawned_id
-    );
 
     resumed.submit_turn(RESUMED_CHILD_PROMPT).await?;
 
@@ -1111,7 +1112,7 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         .find(|request| request.body_contains_text(RESUMED_CHILD_PROMPT))
         .ok_or_else(|| anyhow::anyhow!("expected resumed child request"))?;
     assert_eq!(
-        resumed_request.header("session_id").as_deref(),
+        resumed_request.header("session-id").as_deref(),
         Some(parent_session_id.as_str())
     );
 

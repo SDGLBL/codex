@@ -154,6 +154,7 @@ pub(crate) struct TurnMetadataWorkspace {
 pub struct CodexResponsesMetadata {
     pub(crate) installation_id: String,
     pub(crate) session_id: String,
+    pub(crate) wire_session_id: String,
     pub(crate) thread_id: String,
     pub(crate) turn_id: Option<String>,
     pub(crate) window_id: String,
@@ -178,6 +179,7 @@ impl CodexResponsesMetadata {
     ) -> Self {
         Self {
             installation_id,
+            wire_session_id: session_id.clone(),
             session_id,
             thread_id,
             turn_id: None,
