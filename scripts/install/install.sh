@@ -516,6 +516,10 @@ tar -xzf "$rg_archive_path" -C "$rg_extract_dir"
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp "$native_extract_dir/codex" "$INSTALL_DIR/codex"
+if [ -f "$native_extract_dir/codex-code-mode-host" ]; then
+  cp "$native_extract_dir/codex-code-mode-host" "$INSTALL_DIR/codex-code-mode-host"
+  chmod 0755 "$INSTALL_DIR/codex-code-mode-host"
+fi
 cp "$rg_extract_dir/rg" "$INSTALL_DIR/rg"
 chmod 0755 "$INSTALL_DIR/codex"
 chmod 0755 "$INSTALL_DIR/rg"

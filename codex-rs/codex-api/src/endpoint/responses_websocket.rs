@@ -850,6 +850,7 @@ mod tests {
             service_tier: Some("priority".to_string()),
             prompt_cache_key: Some("cache-key".to_string()),
             text: None,
+            max_output_tokens: None,
             generate: Some(false),
             client_metadata: Some(HashMap::from([(
                 "traceparent".to_string(),

@@ -325,6 +325,7 @@ fn responses_request_properties_match(
         prompt_cache_key: previous_prompt_cache_key,
         text: previous_text,
         client_metadata: _,
+        max_output_tokens: _,
     } = previous;
     let ResponsesApiRequest {
         model: current_model,
@@ -342,6 +343,7 @@ fn responses_request_properties_match(
         prompt_cache_key: current_prompt_cache_key,
         text: current_text,
         client_metadata: _,
+        max_output_tokens: _,
     } = current;
 
     previous_model == current_model
@@ -612,7 +614,7 @@ impl ModelClient {
         add_originator_header(&mut extra_headers, self.state.originator.as_str());
         extra_headers.extend(self.build_responses_compatibility_headers(responses_metadata));
         extra_headers.extend(build_session_headers(
-            Some(responses_metadata.session_id.to_string()),
+            Some(responses_metadata.wire_session_id.to_string()),
             Some(responses_metadata.thread_id.to_string()),
         ));
         if let Some(header_value) = self.generate_attestation_header_for().await {
@@ -1090,7 +1092,7 @@ impl ModelClient {
             headers.insert("x-client-request-id", header_value);
         }
         headers.extend(build_session_headers(
-            Some(responses_metadata.session_id.to_string()),
+            Some(responses_metadata.wire_session_id.to_string()),
             Some(responses_metadata.thread_id.to_string()),
         ));
         headers.extend(self.build_responses_compatibility_headers(responses_metadata));
@@ -1145,7 +1147,7 @@ impl ModelClientSession {
         use_responses_lite: bool,
     ) -> ApiResponsesOptions {
         ApiResponsesOptions {
-            session_id: Some(responses_metadata.session_id.to_string()),
+            session_id: Some(responses_metadata.wire_session_id.to_string()),
             thread_id: Some(responses_metadata.thread_id.to_string()),
             session_source: Some(self.client.state.session_source.clone()),
             extra_headers: {
