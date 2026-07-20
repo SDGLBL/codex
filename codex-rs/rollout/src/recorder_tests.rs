@@ -595,10 +595,12 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
 async fn recorder_omits_ordinals_from_legacy_rollouts() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
+    let thread_id = ThreadId::new();
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
-            ThreadId::new(),
+            thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,

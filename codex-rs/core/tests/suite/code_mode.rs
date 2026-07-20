@@ -1188,8 +1188,7 @@ text(result.output);
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn code_mode_exec_nested_limit_preserves_result_variable_before_default_history_truncation()
--> Result<()> {
+async fn code_mode_exec_nested_limit_bypasses_default_history_truncation() -> Result<()> {
     // TODO(anp): Remove after Wine exec returns complete nested-tool output to code mode.
     skip_if_wine_exec!(
         Ok(()),
@@ -1216,9 +1215,12 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
     let items = custom_tool_output_items(&second_mock.single_request(), "call-1");
     let output = text_item(&items, /*index*/ 1);
-    assert_regex_match(
-        r"^Variable truncated: False\. Variable: x+…\d+ tokens truncated…x+$",
+    assert_eq!(
         output,
+        format!(
+            "Variable truncated: False. Variable: {}",
+            "x".repeat(50_000)
+        )
     );
 
     Ok(())
@@ -1226,7 +1228,7 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn code_mode_exec_nested_limit_truncates_result_variable_when_exceeded() -> Result<()> {
+async fn code_mode_exec_nested_limit_bypasses_history_truncation_when_exceeded() -> Result<()> {
     // TODO(anp): Remove after Wine exec returns complete nested-tool output to code mode.
     skip_if_wine_exec!(
         Ok(()),
@@ -1253,27 +1255,22 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
     let items = custom_tool_output_items(&second_mock.single_request(), "call-1");
     let output = text_item(&items, /*index*/ 1);
-    // The nested 20,000-token budget leaves about 80,000 characters. This
-    // ceiling independently proves that history applied its smaller cap.
+    // The nested 20,000-token budget leaves about 80,000 characters. Retaining
+    // that output proves the code-mode history exception preserved it.
     assert!(
-        output.len() < 60_000,
-        "expected history to truncate the emitted value, got {} bytes",
+        output.len() > 60_000,
+        "expected history to preserve the emitted value, got {} bytes",
         output.len()
     );
-    // The boolean describes the nested result; the marker below comes from
-    // history truncating the value emitted with `text` afterward.
-    assert_regex_match(
-        r"(?s)^Variable truncated: True\. Variable: .*…\d+ tokens truncated…A+$",
-        output,
-    );
+    assert!(output.starts_with("Variable truncated: True. Variable: Warning: truncated output"));
+    assert!(output.contains("…2500 tokens truncated…"));
 
     Ok(())
 }
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn code_mode_exec_nested_limit_preserves_result_variable_before_configured_history_truncation()
--> Result<()> {
+async fn code_mode_exec_nested_limit_bypasses_configured_history_truncation() -> Result<()> {
     // TODO(anp): Remove after Wine exec returns complete nested-tool output to code mode.
     skip_if_wine_exec!(
         Ok(()),
@@ -1302,16 +1299,12 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
     let items = custom_tool_output_items(&second_mock.single_request(), "call-1");
     let output = text_item(&items, /*index*/ 1);
-    // The 50-token override must shrink this 50,000-character value far below
-    // what the default 10,000-token history cap would retain.
-    assert!(
-        output.len() < 1_000,
-        "expected configured history cap to truncate the emitted value, got {} bytes",
-        output.len()
-    );
-    assert_regex_match(
-        r"^Variable truncated: False\. Variable: x+…\d+ tokens truncated…x+$",
+    assert_eq!(
         output,
+        format!(
+            "Variable truncated: False. Variable: {}",
+            "x".repeat(50_000)
+        )
     );
 
     Ok(())
@@ -1319,8 +1312,7 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn code_mode_exec_without_nested_limit_preserves_result_variable_before_default_history_truncation()
--> Result<()> {
+async fn code_mode_exec_without_nested_limit_bypasses_default_history_truncation() -> Result<()> {
     // TODO(anp): Remove after Wine exec returns complete nested-tool output to code mode.
     skip_if_wine_exec!(
         Ok(()),
@@ -1346,9 +1338,12 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
     let items = custom_tool_output_items(&second_mock.single_request(), "call-1");
     let output = text_item(&items, /*index*/ 1);
-    assert_regex_match(
-        r"^Variable truncated: False\. Variable: x+…\d+ tokens truncated…x+$",
+    assert_eq!(
         output,
+        format!(
+            "Variable truncated: False. Variable: {}",
+            "x".repeat(50_000)
+        )
     );
 
     Ok(())
@@ -1356,8 +1351,8 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn code_mode_exec_without_nested_limit_preserves_result_variable_before_configured_history_truncation()
--> Result<()> {
+async fn code_mode_exec_without_nested_limit_bypasses_configured_history_truncation() -> Result<()>
+{
     // TODO(anp): Remove after Wine exec returns complete nested-tool output to code mode.
     skip_if_wine_exec!(
         Ok(()),
@@ -1385,16 +1380,12 @@ text(`Variable truncated: ${resultVariableWasTruncated ? "True" : "False"}. Vari
 
     let items = custom_tool_output_items(&second_mock.single_request(), "call-1");
     let output = text_item(&items, /*index*/ 1);
-    // The 50-token override must shrink this 50,000-character value far below
-    // what the default 10,000-token history cap would retain.
-    assert!(
-        output.len() < 1_000,
-        "expected configured history cap to truncate the emitted value, got {} bytes",
-        output.len()
-    );
-    assert_regex_match(
-        r"^Variable truncated: False\. Variable: x+…\d+ tokens truncated…x+$",
+    assert_eq!(
         output,
+        format!(
+            "Variable truncated: False. Variable: {}",
+            "x".repeat(50_000)
+        )
     );
 
     Ok(())

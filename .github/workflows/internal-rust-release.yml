@@ -240,8 +240,9 @@ jobs:
             export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
             cargo build --locked --target "${target}" --release --jobs 1 --bin codex-responses-api-proxy
             cargo build --locked --target "${target}" --release --jobs 1 --bin codex
+            cargo build --locked --target "${target}" --release --jobs 1 --bin codex-code-mode-host
           else
-            cargo build --locked --target "${target}" --release --bin codex --bin codex-responses-api-proxy
+            cargo build --locked --target "${target}" --release --bin codex --bin codex-code-mode-host --bin codex-responses-api-proxy
           fi
 
       - name: Stage internal release assets
@@ -257,15 +258,16 @@ jobs:
             --artifact-name "${{ matrix.target }}" \
             --release-dir "${release_dir}" \
             --archive-dir "${dest}" \
-            --binaries "codex codex-responses-api-proxy"
+            --binaries "codex codex-code-mode-host codex-responses-api-proxy"
 
           cp "${release_dir}/codex" "${dest}/codex"
+          cp "${release_dir}/codex-code-mode-host" "${dest}/codex-code-mode-host"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
-          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex
+          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex codex-code-mode-host
           tar -C "${dest}" -czf "${dest}/codex-responses-api-proxy-${{ matrix.target }}.tar.gz" codex-responses-api-proxy
 
-          rm "${dest}/codex" "${dest}/codex-responses-api-proxy"
+          rm "${dest}/codex" "${dest}/codex-code-mode-host" "${dest}/codex-responses-api-proxy"
 
       - uses: actions/upload-artifact@v7
         with:

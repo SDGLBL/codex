@@ -488,7 +488,7 @@ impl Session {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_turn_context(
         thread_id: ThreadId,
-        _session_id: SessionId,
+        session_id: SessionId,
         auth_manager: Option<Arc<AuthManager>>,
         session_telemetry: &SessionTelemetry,
         provider: ModelProviderInfo,
@@ -536,19 +536,22 @@ impl Session {
         let permission_profile = per_turn_config.permissions.effective_permission_profile();
         let per_turn_config = Arc::new(per_turn_config);
         let wire_session_id = session_configuration.wire_session_id.unwrap_or(thread_id);
-        let turn_metadata_state = Arc::new(TurnMetadataState::new(
-            wire_session_id.to_string(),
-            thread_id.to_string(),
-            session_configuration.forked_from_thread_id,
-            session_configuration.parent_thread_id,
-            &session_configuration.session_source,
-            session_configuration.thread_source.clone(),
-            sub_id.clone(),
-            cwd.clone(),
-            &permission_profile,
-            session_configuration.windows_sandbox_level,
-            network.is_some(),
-        ));
+        let turn_metadata_state = Arc::new(
+            TurnMetadataState::new(
+                session_id.to_string(),
+                thread_id.to_string(),
+                session_configuration.forked_from_thread_id,
+                session_configuration.parent_thread_id,
+                &session_configuration.session_source,
+                session_configuration.thread_source.clone(),
+                sub_id.clone(),
+                cwd.clone(),
+                &permission_profile,
+                session_configuration.windows_sandbox_level,
+                network.is_some(),
+            )
+            .with_wire_session_id(wire_session_id.to_string()),
+        );
         let (current_date, timezone) = local_time_context();
         let extension_data = Arc::new(codex_extension_api::ExtensionData::new(sub_id.clone()));
         extension_data.insert(skills_snapshot.clone());

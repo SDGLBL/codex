@@ -1269,12 +1269,16 @@ fn record_items_preserves_code_mode_exec_output_after_exec_budgeting() {
         status: None,
         call_id: "call-code-mode-exec".to_string(),
         name: "exec".to_string(),
+        namespace: None,
         input: "// @exec: {\"max_output_tokens\": 20000}\ntext(result.output);".to_string(),
+        internal_chat_message_metadata_passthrough: None,
     };
     let output = ResponseItem::CustomToolCallOutput {
+        id: None,
         call_id: "call-code-mode-exec".to_string(),
         name: None,
         output: FunctionCallOutputPayload::from_text(long_output.clone()),
+        internal_chat_message_metadata_passthrough: None,
     };
 
     history.record_items([&call, &output], policy);

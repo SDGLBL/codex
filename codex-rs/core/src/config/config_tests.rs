@@ -10847,7 +10847,7 @@ min_wait_timeout_ms = -1
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"[features.multi_agent_v2]
 enabled = true
-min_wait_timeout_ms = 3600001
+min_wait_timeout_ms = 14400001
 "#,
     )?;
 
@@ -10861,7 +10861,7 @@ min_wait_timeout_ms = 3600001
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
         err.to_string(),
-        "features.multi_agent_v2.min_wait_timeout_ms must be at most 3600000"
+        "features.multi_agent_v2.min_wait_timeout_ms must be at most 14400000"
     );
 
     std::fs::write(
@@ -10889,7 +10889,7 @@ max_wait_timeout_ms = -1
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"[features.multi_agent_v2]
 enabled = true
-max_wait_timeout_ms = 3600001
+max_wait_timeout_ms = 14400001
 "#,
     )?;
 
@@ -10903,7 +10903,7 @@ max_wait_timeout_ms = 3600001
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
         err.to_string(),
-        "features.multi_agent_v2.max_wait_timeout_ms must be at most 3600000"
+        "features.multi_agent_v2.max_wait_timeout_ms must be at most 14400000"
     );
 
     std::fs::write(
