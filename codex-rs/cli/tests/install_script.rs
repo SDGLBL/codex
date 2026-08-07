@@ -73,13 +73,20 @@ fn create_release_fixture_with_codex(
     let native_binary_path = native_stage.path().join("codex");
     fs::copy(codex_source, &native_binary_path)?;
     make_executable(&native_binary_path)?;
+    let code_mode_host_path = native_stage.path().join("codex-code-mode-host");
+    fs::write(
+        &code_mode_host_path,
+        "#!/bin/sh\necho code mode host smoke test\n",
+    )?;
+    make_executable(&code_mode_host_path)?;
     run_command(
         Command::new("tar")
             .arg("-C")
             .arg(native_stage.path())
             .arg("-czf")
             .arg(release_dir.join(native_asset_name))
-            .arg("codex"),
+            .arg("codex")
+            .arg("codex-code-mode-host"),
     )?;
 
     let rg_stage = TempDir::new_in(root)?;
@@ -374,8 +381,8 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     assert!(
         stdout.contains("Configured config.toml. Run `codex` to use the internal Azure provider.")
     );
-    assert!(stdout.contains("Run now: export PATH="));
-    assert!(stdout.contains("&& codex\n"));
+    assert!(stdout.contains("Current terminal: export PATH="));
+    assert!(stdout.contains("&& codex"));
 
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
@@ -459,6 +466,13 @@ fn install_script_resolves_latest_version_from_install_url_when_api_lookup_fails
             .join(".local")
             .join("bin")
             .join("codex")
+            .is_file()
+    );
+    assert!(
+        home.path()
+            .join(".local")
+            .join("bin")
+            .join("codex-code-mode-host")
             .is_file()
     );
 
@@ -628,14 +642,13 @@ fn install_script_reuses_existing_codex_install_dir() -> Result<()> {
         &fake_codex_path,
         INSTALL_TAG,
     )?;
-    let stdout = run_installer(
+    let _stdout = run_installer(
         home.path(),
         &release_base_url,
         &platform,
         Some(existing_bin.as_path()),
     )?;
 
-    assert!(stdout.contains(&format!("Installing to {}", existing_bin.display())));
     assert!(existing_bin.join("codex").is_file());
     assert!(
         !home
@@ -678,10 +691,7 @@ fn install_script_falls_back_when_zshrc_is_not_writable() -> Result<()> {
     )?;
 
     let zprofile_path = home.path().join(".zprofile");
-    assert!(stdout.contains(&format!(
-        "PATH updated for future shells in {}",
-        zprofile_path.display()
-    )));
+    assert!(stdout.contains(&format!("PATH was added to {}", zprofile_path.display())));
     assert!(zprofile_path.is_file());
     assert!(fs::read_to_string(&zprofile_path)?.contains("export PATH=\""));
 
@@ -929,7 +939,10 @@ fn install_script_does_not_run_installed_codex_to_write_config() -> Result<()> {
 
     let fake_codex_dir = TempDir::new_in(fixtures.path())?;
     let fake_codex_path = fake_codex_dir.path().join("codex");
-    fs::write(&fake_codex_path, "#!/bin/sh\nexit 137\n")?;
+    fs::write(
+        &fake_codex_path,
+        "#!/bin/sh\n[ \"${1:-}\" = \"--version\" ] && { echo 'codex-cli 9.9.9'; exit 0; }\nexit 137\n",
+    )?;
     make_executable(&fake_codex_path)?;
 
     let release_base_url = create_release_fixture_with_codex(

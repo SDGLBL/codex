@@ -466,6 +466,7 @@ async fn thread_search_occurrences_reads_paginated_projection() -> Result<()> {
         .create_thread(CreateThreadParams {
             session_id: thread_id.into(),
             thread_id,
+            wire_session_id: thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -1514,6 +1515,7 @@ async fn paginated_history_lists_and_legacy_reads_use_projected_turns_and_items(
         .create_thread(CreateThreadParams {
             session_id: thread_id.into(),
             thread_id,
+            wire_session_id: thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,

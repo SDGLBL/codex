@@ -266,6 +266,7 @@ fn write_rollout_with_user_message(
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: None,
                     forked_from_id: None,
                     parent_thread_id: None,
                     timestamp: "2026-06-01T14:26:25Z".to_string(),

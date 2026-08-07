@@ -326,6 +326,7 @@ fn responses_request_properties_match(
         prompt_cache_key: previous_prompt_cache_key,
         text: previous_text,
         client_metadata: _,
+        max_output_tokens: _,
     } = previous;
     let ResponsesApiRequest {
         model: current_model,
@@ -343,6 +344,7 @@ fn responses_request_properties_match(
         prompt_cache_key: current_prompt_cache_key,
         text: current_text,
         client_metadata: _,
+        max_output_tokens: _,
     } = current;
 
     previous_model == current_model
