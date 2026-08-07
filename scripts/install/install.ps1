@@ -7,12 +7,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+$Repository = if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALL_REPOSITORY)) { "SDGLBL/codex" } else { $env:CODEX_INSTALL_REPOSITORY }
+$ReleaseTagPrefix = if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALL_RELEASE_TAG_PREFIX)) { "internal-rust-v" } else { $env:CODEX_INSTALL_RELEASE_TAG_PREFIX }
+$ReleaseTagOverride = $env:CODEX_INSTALL_RELEASE_TAG
+$LatestReleaseUri = "https://api.github.com/repos/$Repository/releases/latest"
+
 if ([string]::IsNullOrWhiteSpace($Release)) {
     $Release = "latest"
 }
 
 $NonInteractive = $env:CODEX_NON_INTERACTIVE -match "^(?i:1|true|yes)$"
-$DefaultPreferReleasesOpenAICom = $true
+$DefaultPreferReleasesOpenAICom = $Repository -eq "openai/codex"
 $PreferReleasesOpenAICom = if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM)) {
     $DefaultPreferReleasesOpenAICom
 } else {
@@ -66,6 +71,10 @@ function Normalize-Version {
 
     if ($RawVersion.StartsWith("rust-v")) {
         return $RawVersion.Substring(6)
+    }
+
+    if ($RawVersion.StartsWith("internal-rust-v")) {
+        return $RawVersion.Substring(15)
     }
 
     if ($RawVersion.StartsWith("v")) {
@@ -332,11 +341,12 @@ function Resolve-ReleaseFromGitHub {
 
     if ($NormalizedVersion -eq "latest") {
         $requestedRelease = "latest"
-        $metadataUri = "https://api.github.com/repos/openai/codex/releases/latest"
+        $metadataUri = $LatestReleaseUri
     } else {
         $resolvedVersion = $NormalizedVersion
         $requestedRelease = $resolvedVersion
-        $metadataUri = "https://api.github.com/repos/openai/codex/releases/tags/rust-v$resolvedVersion"
+        $releaseTag = if ([string]::IsNullOrWhiteSpace($ReleaseTagOverride)) { "$ReleaseTagPrefix$resolvedVersion" } else { $ReleaseTagOverride }
+        $metadataUri = "https://api.github.com/repos/$Repository/releases/tags/$releaseTag"
     }
 
     try {
