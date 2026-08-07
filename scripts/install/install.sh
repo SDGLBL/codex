@@ -3,19 +3,38 @@
 set -eu
 
 RELEASE="${CODEX_RELEASE:-latest}"
+REPOSITORY="${CODEX_INSTALL_REPOSITORY:-SDGLBL/codex}"
+RELEASE_TAG_PREFIX="${CODEX_INSTALL_RELEASE_TAG_PREFIX:-internal-rust-v}"
+RELEASE_TAG_OVERRIDE="${CODEX_INSTALL_RELEASE_TAG:-}"
+RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITORY/releases/download}"
+LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
+LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPOSITORY/releases/latest/download/install.sh}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
-DEFAULT_PREFER_RELEASES_OPENAI_COM="true"
+if [ "$REPOSITORY" = "openai/codex" ]; then
+  DEFAULT_PREFER_RELEASES_OPENAI_COM="true"
+else
+  DEFAULT_PREFER_RELEASES_OPENAI_COM="false"
+fi
 PREFER_RELEASES_OPENAI_COM="${CODEX_INSTALLER_USE_RELEASES_OPENAI_COM:-$DEFAULT_PREFER_RELEASES_OPENAI_COM}"
 RELEASES_BASE_URL="https://releases.openai.com/codex"
 RELEASES_CONNECT_TIMEOUT=10
 RELEASES_METADATA_TIMEOUT=30
 RELEASES_ASSET_TIMEOUT=300
 release_source="github"
+custom_release_base="false"
+if [ -n "${CODEX_INSTALL_RELEASE_BASE_URL:-}" ]; then
+  custom_release_base="true"
+fi
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
 CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
+RG_BIN_PATH="$BIN_DIR/rg"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+INSTALL_AK="${CODEX_INSTALL_AK:-}"
+INSTALL_AZURE_BASE_URL="${CODEX_INSTALL_AZURE_BASE_URL:-}"
+DEFAULT_INSTALL_MODEL="gpt-5.4-2026-03-05"
+INSTALL_MODEL="${CODEX_INSTALL_MODEL:-$DEFAULT_INSTALL_MODEL}"
 STANDALONE_ROOT="$CODEX_HOME_DIR/packages/standalone"
 RELEASES_DIR="$STANDALONE_ROOT/releases"
 CURRENT_LINK="$STANDALONE_ROOT/current"
@@ -43,6 +62,9 @@ normalize_version() {
     "" | latest)
       printf 'latest\n'
       ;;
+    internal-rust-v*)
+      printf '%s\n' "${1#internal-rust-v}"
+      ;;
     rust-v*)
       printf '%s\n' "${1#rust-v}"
       ;;
@@ -53,6 +75,40 @@ normalize_version() {
       printf '%s\n' "$1"
       ;;
   esac
+}
+
+tag_name_for_version() {
+  printf '%s%s\n' "$RELEASE_TAG_PREFIX" "$1"
+}
+
+resolve_version_from_latest_install_url() {
+  effective_url=""
+  if command -v curl >/dev/null 2>&1; then
+    redirect_tag="$(curl -fsSL -D - -o /dev/null "$LATEST_INSTALL_URL" 2>/dev/null |
+      sed -n 's/^[Ll]ocation: .*\/releases\/download\/\([^/]*\)\/install\.sh.*/\1/p' |
+      head -n 1 | tr -d '\r')"
+    if [ -n "$redirect_tag" ]; then
+      printf '%s\n' "$redirect_tag"
+      return
+    fi
+    effective_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_INSTALL_URL" 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    effective_url="$(wget -q -O /dev/null --server-response "$LATEST_INSTALL_URL" 2>&1 |
+      sed -n 's/^[[:space:]]*Location: //p' | tail -n 1 | tr -d '\r')"
+    if [ -z "$effective_url" ]; then
+      effective_url="$LATEST_INSTALL_URL"
+    fi
+  fi
+
+  if [ -n "$effective_url" ]; then
+    tag_candidate="${effective_url%/install.sh}"
+    tag_candidate="${tag_candidate##*/}"
+    if [ -n "$tag_candidate" ] && [ "$tag_candidate" != "download" ]; then
+      printf '%s\n' "$tag_candidate"
+      return
+    fi
+  fi
+  return 1
 }
 
 validate_version() {
@@ -69,6 +125,7 @@ validate_version() {
 }
 
 parse_args() {
+  positional_release=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --release)
@@ -81,10 +138,14 @@ parse_args() {
         ;;
       --help | -h)
         cat <<EOF
-Usage: install.sh [--release VERSION]
+Usage: install.sh [VERSION] [--release VERSION]
 
 Environment:
   CODEX_RELEASE          Version to install; overridden by --release.
+  CODEX_INSTALL_REPOSITORY
+                         GitHub repository containing internal release assets.
+  CODEX_INSTALL_RELEASE_TAG
+                         Exact internal release tag to install.
   CODEX_NON_INTERACTIVE  Set to 1, true, or yes to skip prompts.
   CODEX_INSTALLER_USE_RELEASES_OPENAI_COM
                          Set to 0, false, or no to use GitHub Releases.
@@ -92,8 +153,12 @@ EOF
         exit 0
         ;;
       *)
-        echo "Unknown argument: $1" >&2
-        exit 1
+        if [ -n "$positional_release" ]; then
+          echo "Unknown argument: $1" >&2
+          exit 1
+        fi
+        positional_release="$1"
+        RELEASE="$1"
         ;;
     esac
     shift
@@ -305,9 +370,9 @@ parse_release_metadata() {
 
 release_url_for_asset() {
   asset="$1"
-  resolved_version="$2"
+  resolved_tag="$2"
 
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
+  printf '%s/%s/%s\n' "${RELEASE_BASE_URL%/}" "$resolved_tag" "$asset"
 }
 
 releases_url_for_asset() {
@@ -318,9 +383,9 @@ releases_url_for_asset() {
 }
 
 release_metadata_url() {
-  resolved_version="$1"
+  resolved_tag="$1"
 
-  printf 'https://api.github.com/repos/openai/codex/releases/tags/rust-v%s\n' "$resolved_version"
+  printf 'https://api.github.com/repos/%s/releases/tags/%s\n' "$REPOSITORY" "$resolved_tag"
 }
 
 parse_downloaded_release_metadata() {
@@ -335,6 +400,7 @@ parse_downloaded_release_metadata() {
 resolve_metadata_version() {
   release_tag="$(printf '%s\n' "$release_metadata" | awk -F '\t' '$1 == "tag_name" { print $2; exit }')"
   case "$release_tag" in
+    internal-rust-v*) metadata_version="${release_tag#internal-rust-v}" ;;
     rust-v*) metadata_version="${release_tag#rust-v}" ;;
     *) metadata_version="" ;;
   esac
@@ -349,11 +415,12 @@ resolve_release_from_github() {
   normalized_version="$1"
   if [ "$normalized_version" = "latest" ]; then
     requested_release="latest"
-    metadata_url="https://api.github.com/repos/openai/codex/releases/latest"
+    metadata_url="$LATEST_RELEASE_URL"
   else
     resolved_version="$normalized_version"
     requested_release="$resolved_version"
-    metadata_url="$(release_metadata_url "$resolved_version")"
+    resolved_tag="${RELEASE_TAG_OVERRIDE:-$RELEASE_TAG_PREFIX$resolved_version}"
+    metadata_url="$(release_metadata_url "$resolved_tag")"
   fi
 
   if ! release_json="$(download_text "$metadata_url")"; then
@@ -366,6 +433,9 @@ resolve_release_from_github() {
   if [ "$normalized_version" = "latest" ]; then
     resolve_metadata_version
     resolved_version="$metadata_version"
+    resolved_tag="$release_tag"
+  else
+    resolved_tag="${RELEASE_TAG_OVERRIDE:-$RELEASE_TAG_PREFIX$resolved_version}"
   fi
 
   release_source="github"
@@ -397,10 +467,51 @@ resolve_release_from_releases() {
     return 1
   fi
   resolved_version="$metadata_version"
+  resolved_tag="rust-v$resolved_version"
   release_source="releases.openai.com"
 }
 
+resolve_custom_release() {
+  if [ -n "$RELEASE_TAG_OVERRIDE" ]; then
+    resolved_tag="$RELEASE_TAG_OVERRIDE"
+    resolved_version="$(normalize_version "$resolved_tag")"
+    release_source="custom"
+    release_metadata=""
+    select_release_assets
+    return
+  fi
+
+  normalized_version="$(normalize_version "$RELEASE")"
+  if [ "$normalized_version" = "latest" ]; then
+    release_json="$(download_text "$LATEST_RELEASE_URL" 2>/dev/null || true)"
+    release_tag="$(printf '%s\n' "$release_json" |
+      sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    if [ -z "$release_tag" ]; then
+      release_tag="$(resolve_version_from_latest_install_url || true)"
+    fi
+    if [ -z "$release_tag" ]; then
+      echo "Failed to resolve the latest Codex release version." >&2
+      exit 1
+    fi
+    resolved_tag="$release_tag"
+    resolved_version="$(normalize_version "$resolved_tag")"
+  else
+    validate_version "$normalized_version"
+    resolved_version="$normalized_version"
+    resolved_tag="$(tag_name_for_version "$resolved_version")"
+  fi
+
+  release_source="custom"
+  release_metadata=""
+  select_release_assets
+}
+
 resolve_release() {
+  if [ "$custom_release_base" = "true" ]; then
+    resolve_custom_release
+    return
+  fi
+
   normalized_version="$(normalize_version "$RELEASE")"
   validate_version "$normalized_version"
 
@@ -463,32 +574,44 @@ release_asset_digest() {
 select_release_assets() {
   package_asset="codex-package-$vendor_target.tar.gz"
   checksum_asset="codex-package_SHA256SUMS"
+  internal_codex_asset="codex-$vendor_target.tar.gz"
+  internal_rg_asset="rg-$vendor_target.tar.gz"
   download_fallback_url=""
   checksum_fallback_url=""
+  internal_rg_download_url=""
 
-  if release_asset_exists "$package_asset" &&
+  if [ "$release_source" = "custom" ]; then
+    install_layout="internal-raw"
+    asset="$internal_codex_asset"
+  elif release_asset_exists "$package_asset" &&
     release_asset_exists "$checksum_asset"; then
     install_layout="package"
     asset="$package_asset"
   elif release_asset_exists "codex-npm-$npm_tag-$resolved_version.tgz"; then
     install_layout="legacy-platform-npm"
     asset="codex-npm-$npm_tag-$resolved_version.tgz"
+  elif release_asset_exists "$internal_codex_asset" &&
+    release_asset_exists "$internal_rg_asset"; then
+    install_layout="internal-raw"
+    asset="$internal_codex_asset"
   else
-    echo "Could not find Codex package or platform npm release assets for Codex $resolved_version." >&2
+    echo "Could not find Codex package or internal platform release assets for Codex $resolved_version." >&2
     return 1
   fi
 
   if [ "$release_source" = "releases.openai.com" ]; then
     download_url="$(releases_url_for_asset "$asset" "$resolved_version")"
-    download_fallback_url="$(release_url_for_asset "$asset" "$resolved_version")"
+    download_fallback_url="$(release_url_for_asset "$asset" "$resolved_tag")"
     if [ "$install_layout" = "package" ]; then
       checksum_url="$(releases_url_for_asset "$checksum_asset" "$resolved_version")"
-      checksum_fallback_url="$(release_url_for_asset "$checksum_asset" "$resolved_version")"
+      checksum_fallback_url="$(release_url_for_asset "$checksum_asset" "$resolved_tag")"
     fi
   else
-    download_url="$(release_url_for_asset "$asset" "$resolved_version")"
+    download_url="$(release_url_for_asset "$asset" "$resolved_tag")"
     if [ "$install_layout" = "package" ]; then
-      checksum_url="$(release_url_for_asset "$checksum_asset" "$resolved_version")"
+      checksum_url="$(release_url_for_asset "$checksum_asset" "$resolved_tag")"
+    elif [ "$install_layout" = "internal-raw" ]; then
+      internal_rg_download_url="$(release_url_for_asset "$internal_rg_asset" "$resolved_tag")"
     fi
   fi
 }
@@ -796,6 +919,29 @@ resolve_existing_codex() {
   command -v codex 2>/dev/null || true
 }
 
+reuse_unmanaged_internal_install_dir() {
+  if [ -n "${CODEX_INSTALL_DIR:-}" ] || [ "$REPOSITORY" = "openai/codex" ]; then
+    return
+  fi
+
+  existing_path="$(resolve_existing_codex)"
+  if [ -z "$existing_path" ] ||
+    [ ! -f "$existing_path" ] ||
+    [ -n "$(classify_existing_codex "$existing_path" || true)" ]; then
+    return
+  fi
+
+  existing_dir="$(dirname "$existing_path")"
+  if [ ! -w "$existing_dir" ]; then
+    return
+  fi
+
+  BIN_DIR="$existing_dir"
+  BIN_PATH="$BIN_DIR/codex"
+  CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
+  RG_BIN_PATH="$BIN_DIR/rg"
+}
+
 classify_existing_codex() {
   existing_path="$1"
 
@@ -983,6 +1129,29 @@ install_legacy_platform_npm_release() {
   mv "$stage_release" "$release_dir"
 }
 
+install_internal_raw_release() {
+  release_dir="$1"
+  codex_archive_path="$2"
+  rg_archive_path="$3"
+  stage_release="$RELEASES_DIR/.staging.$(basename "$release_dir").$$"
+
+  mkdir -p "$RELEASES_DIR"
+  rm -rf "$stage_release"
+  mkdir -p "$stage_release/bin" "$stage_release/codex-path"
+  tar -xzf "$codex_archive_path" -C "$stage_release/bin"
+  tar -xzf "$rg_archive_path" -C "$stage_release/codex-path"
+  chmod 0755 \
+    "$stage_release/bin/codex" \
+    "$stage_release/bin/codex-code-mode-host" \
+    "$stage_release/codex-path/rg"
+  ln -sf "bin/codex" "$stage_release/codex"
+
+  if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
+    rm -rf "$release_dir"
+  fi
+  mv "$stage_release" "$release_dir"
+}
+
 release_dir_is_complete() {
   release_dir="$1"
   expected_version="$2"
@@ -1007,6 +1176,13 @@ release_dir_is_complete() {
         [ -x "$release_dir/codex-resources/rg" ] ||
         return 1
       ;;
+    internal-raw)
+      [ -x "$release_dir/bin/codex" ] &&
+        [ -x "$release_dir/bin/codex-code-mode-host" ] &&
+        [ -x "$release_dir/codex" ] &&
+        [ -x "$release_dir/codex-path/rg" ] ||
+        return 1
+      ;;
     *)
       return 1
       ;;
@@ -1017,6 +1193,10 @@ release_dir_is_complete() {
       [ -x "$release_dir/codex-resources/bwrap" ] || return 1
       ;;
   esac
+
+  if [ "$release_source" = "custom" ]; then
+    return 0
+  fi
 
   installed_version="$(version_from_binary "$release_dir/bin/codex" || version_from_binary "$release_dir/codex" || true)"
   [ "$installed_version" = "$expected_version" ]
@@ -1047,7 +1227,8 @@ update_visible_command() {
 
   replace_path_with_symlink "$BIN_PATH" "$CURRENT_LINK/$codex_relative_path" "$tmp_link"
 
-  if [ "$os" = "darwin" ] && [ -x "$release_dir/bin/codex-code-mode-host" ]; then
+  if { [ "$os" = "darwin" ] || [ "$install_layout" = "internal-raw" ]; } &&
+    [ -x "$release_dir/bin/codex-code-mode-host" ]; then
     replace_path_with_symlink \
       "$CODE_MODE_HOST_BIN_PATH" \
       "$CURRENT_LINK/bin/codex-code-mode-host" \
@@ -1056,21 +1237,140 @@ update_visible_command() {
     "$CURRENT_LINK/bin/codex-code-mode-host" ]; then
     rm -f "$CODE_MODE_HOST_BIN_PATH"
   fi
+
+  if [ "$install_layout" = "internal-raw" ]; then
+    replace_path_with_symlink "$RG_BIN_PATH" "$CURRENT_LINK/codex-path/rg" "$tmp_link"
+  fi
 }
 
 verify_visible_command() {
   "$BIN_PATH" --version >/dev/null
-  if [ "$os" = "darwin" ] && [ "$install_layout" = "package" ]; then
+  if { [ "$os" = "darwin" ] && [ "$install_layout" = "package" ]; } ||
+    [ "$install_layout" = "internal-raw" ]; then
     [ -x "$CODE_MODE_HOST_BIN_PATH" ]
   fi
+}
+
+warn_if_crawl_url() {
+  case "$1" in
+    */v2/crawl | */v2/crawl/)
+      warn "CODEX_INSTALL_AZURE_BASE_URL ends with /v2/crawl. GPT models use the responses API, so this should point at the openapi base URL, not /v2/crawl."
+      ;;
+  esac
+}
+
+prompt_for_install_config() {
+  if [ -n "$INSTALL_AK" ] && [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+    warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+    return
+  fi
+
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ] || ! { printf '' >/dev/tty; } 2>/dev/null; then
+    echo "Non-interactive installs must set both CODEX_INSTALL_AK and CODEX_INSTALL_AZURE_BASE_URL, for example:" >&2
+    echo "  CODEX_INSTALL_AK=... CODEX_INSTALL_AZURE_BASE_URL=... curl -fsSL https://github.com/SDGLBL/codex/releases/latest/download/install.sh | bash" >&2
+    exit 1
+  fi
+
+  if [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    printf 'Enter the internal Azure base URL: ' >/dev/tty
+    IFS= read -r INSTALL_AZURE_BASE_URL </dev/tty || true
+  fi
+
+  if [ -z "$INSTALL_AK" ]; then
+    old_stty=""
+    if command -v stty >/dev/null 2>&1; then
+      old_stty="$(stty -g </dev/tty 2>/dev/null || true)"
+      stty -echo </dev/tty 2>/dev/null || true
+    fi
+    printf 'Enter ak for the internal Azure provider: ' >/dev/tty
+    IFS= read -r INSTALL_AK </dev/tty || true
+    if [ -n "$old_stty" ]; then
+      stty "$old_stty" </dev/tty 2>/dev/null || true
+    fi
+    printf '\n' >/dev/tty
+  fi
+
+  if [ -z "$INSTALL_AK" ] || [ -z "$INSTALL_AZURE_BASE_URL" ]; then
+    echo "A non-empty Azure base URL and ak are required to configure Codex." >&2
+    exit 1
+  fi
+  warn_if_crawl_url "$INSTALL_AZURE_BASE_URL"
+}
+
+toml_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+write_install_config() {
+  mkdir -p "$CODEX_HOME_DIR"
+  config_path="$CODEX_HOME_DIR/config.toml"
+  model_escaped="$(toml_escape "$INSTALL_MODEL")"
+  base_url_escaped="$(toml_escape "$INSTALL_AZURE_BASE_URL")"
+  ak_escaped="$(toml_escape "$INSTALL_AK")"
+
+  cat >"$config_path" <<EOF
+model = "$model_escaped"
+model_provider = "azure"
+sandbox_mode = "danger-full-access"
+approval_policy = "on-request"
+model_reasoning_effort = "xhigh"
+plan_mode_reasoning_effort = "xhigh"
+model_max_output_tokens = 64000
+background_terminal_max_timeout = 72000000
+project_doc_max_bytes = 65536
+suppress_unstable_features_warning = true
+
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = true
+
+[features]
+apps = false
+guardian_approval = false
+prevent_idle_sleep = true
+tui_app_server = false
+hooks = true
+multi_agent = true
+voice_transcription = false
+enable_fanout = true
+goals = true
+remote_connections = true
+js_repl = false
+
+[agents]
+max_threads = 8
+max_depth = 1
+
+[tui]
+theme = "catppuccin-latte"
+notification_method = "auto"
+notifications = ["agent-turn-complete", "approval-requested"]
+
+[model_providers.azure]
+name = "Azure"
+base_url = "$base_url_escaped"
+wire_api = "responses"
+request_max_retries = 50
+retry_429 = true
+stream_max_retries = 50
+
+[model_providers.azure.query_params]
+api-version = "2025-04-01-preview"
+ak = "$ak_escaped"
+EOF
+  step "Configured config.toml. Run \`codex\` to use the internal Azure provider."
 }
 
 parse_args "$@"
 
 require_command mktemp
 require_command tar
+require_command dirname
 
-case "$(uname -s)" in
+uname_s_value="${CODEX_INSTALL_UNAME_S:-$(uname -s)}"
+uname_m_value="${CODEX_INSTALL_UNAME_M:-$(uname -m)}"
+
+case "$uname_s_value" in
   Darwin)
     os="darwin"
     ;;
@@ -1083,7 +1383,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-case "$(uname -m)" in
+case "$uname_m_value" in
   x86_64 | amd64)
     arch="x86_64"
     ;;
@@ -1091,13 +1391,14 @@ case "$(uname -m)" in
     arch="aarch64"
     ;;
   *)
-    echo "Unsupported architecture: $(uname -m)" >&2
+    echo "Unsupported architecture: $uname_m_value" >&2
     exit 1
     ;;
 esac
 
 if [ "$os" = "darwin" ] && [ "$arch" = "x86_64" ]; then
-  if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then
+  proc_translated="${CODEX_INSTALL_PROC_TRANSLATED:-$(sysctl -n sysctl.proc_translated 2>/dev/null || true)}"
+  if [ "$proc_translated" = "1" ]; then
     arch="aarch64"
   fi
 fi
@@ -1114,6 +1415,10 @@ if [ "$os" = "darwin" ]; then
   fi
 else
   if [ "$arch" = "aarch64" ]; then
+    if [ "$REPOSITORY" = "SDGLBL/codex" ] || [ "$custom_release_base" = "true" ]; then
+      echo "Linux (ARM64) is not currently published for the internal release installer." >&2
+      exit 1
+    fi
     npm_tag="linux-arm64"
     vendor_target="aarch64-unknown-linux-musl"
     platform_label="Linux (ARM64)"
@@ -1124,6 +1429,7 @@ else
   fi
 fi
 
+reuse_unmanaged_internal_install_dir
 resolve_release
 release_name="$resolved_version-$vendor_target"
 release_dir="$RELEASES_DIR/$release_name"
@@ -1166,14 +1472,32 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
     checksum_digest="$(release_asset_digest "$checksum_asset")"
     download_file_with_fallback "$checksum_url" "$checksum_fallback_url" "$checksum_path" "$checksum_digest" "$checksum_asset" "$asset"
     expected_digest="$(package_archive_digest "$asset" "$checksum_path")"
+  elif [ "$install_layout" = "internal-raw" ]; then
+    internal_rg_archive_path="$tmp_dir/$internal_rg_asset"
+    if [ "$release_source" = "custom" ]; then
+      download_file "$internal_rg_download_url" "$internal_rg_archive_path"
+    else
+      internal_rg_digest="$(release_asset_digest "$internal_rg_asset")"
+      download_file "$internal_rg_download_url" "$internal_rg_archive_path"
+      verify_archive_digest "$internal_rg_archive_path" "$internal_rg_digest"
+    fi
   else
     expected_digest="$(release_asset_digest "$asset")"
   fi
-  download_file_with_fallback "$download_url" "$download_fallback_url" "$archive_path" "$expected_digest" "$asset"
+  if [ "$install_layout" = "internal-raw" ] && [ "$release_source" = "custom" ]; then
+    download_file "$download_url" "$archive_path"
+  else
+    if [ "$install_layout" = "internal-raw" ]; then
+      expected_digest="$(release_asset_digest "$asset")"
+    fi
+    download_file_with_fallback "$download_url" "$download_fallback_url" "$archive_path" "$expected_digest" "$asset"
+  fi
 
   step "Installing standalone package to $release_dir"
   if [ "$install_layout" = "package" ]; then
     install_package_release "$release_dir" "$archive_path"
+  elif [ "$install_layout" = "internal-raw" ]; then
+    install_internal_raw_release "$release_dir" "$archive_path" "$internal_rg_archive_path"
   else
     install_legacy_platform_npm_release "$release_dir" "$archive_path" "$vendor_target"
   fi
@@ -1186,6 +1510,13 @@ update_current_link "$release_dir"
 update_visible_command "$release_dir"
 add_to_path
 verify_visible_command
+if [ "$REPOSITORY" != "openai/codex" ] ||
+  [ -n "$INSTALL_AK" ] ||
+  [ -n "$INSTALL_AZURE_BASE_URL" ]; then
+  prompt_for_install_config
+  step "Configuring config.toml"
+  write_install_config
+fi
 release_install_lock
 handle_conflicting_install
 

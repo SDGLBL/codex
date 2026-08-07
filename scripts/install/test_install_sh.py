@@ -655,6 +655,8 @@ def run_installer_in(
         {
             "CODEX_HOME": str(root / "codex-home"),
             "CODEX_INSTALL_DIR": str(root / "install-bin"),
+            "CODEX_INSTALL_REPOSITORY": "openai/codex",
+            "CODEX_INSTALL_RELEASE_TAG_PREFIX": "rust-v",
             "CODEX_NON_INTERACTIVE": "1",
             "CODEX_RELEASE": release,
             "CODEX_TEST_ARCHIVE_PATH": str(archive_path or ""),
