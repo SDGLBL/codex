@@ -286,6 +286,47 @@ fn final_message_from_turn_items_falls_back_to_latest_plan() {
 }
 
 #[test]
+fn turn_started_clears_last_turn_diff() {
+    let mut processor = EventProcessorWithHumanOutput {
+        bold: Style::new(),
+        cyan: Style::new(),
+        dimmed: Style::new(),
+        green: Style::new(),
+        italic: Style::new(),
+        magenta: Style::new(),
+        red: Style::new(),
+        yellow: Style::new(),
+        show_agent_reasoning: true,
+        show_raw_agent_reasoning: false,
+        last_message_path: None,
+        last_turn_diff: Some("diff".to_string()),
+        final_message: None,
+        final_message_rendered: false,
+        emit_final_message_on_shutdown: false,
+        last_total_token_usage: None,
+    };
+
+    let status = processor.process_server_notification(ServerNotification::TurnStarted(
+        codex_app_server_protocol::TurnStartedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: Turn {
+                id: "turn-1".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: TurnStatus::InProgress,
+                error: None,
+                started_at: Some(0),
+                completed_at: None,
+                duration_ms: None,
+            },
+        },
+    ));
+
+    assert_eq!(status, crate::event_processor::CodexStatus::Running);
+    assert_eq!(processor.last_turn_diff, None);
+}
+
+#[test]
 fn turn_completed_recovers_final_message_from_turn_items() {
     let mut processor = EventProcessorWithHumanOutput {
         bold: Style::new(),
@@ -299,6 +340,7 @@ fn turn_completed_recovers_final_message_from_turn_items() {
         show_agent_reasoning: true,
         show_raw_agent_reasoning: false,
         last_message_path: None,
+        last_turn_diff: None,
         final_message: None,
         final_message_rendered: false,
         emit_final_message_on_shutdown: false,
@@ -347,6 +389,7 @@ fn turn_completed_overwrites_stale_final_message_from_turn_items() {
         show_agent_reasoning: true,
         show_raw_agent_reasoning: false,
         last_message_path: None,
+        last_turn_diff: None,
         final_message: Some("stale answer".to_string()),
         final_message_rendered: true,
         emit_final_message_on_shutdown: false,
@@ -396,6 +439,7 @@ fn turn_completed_preserves_streamed_final_message_when_turn_items_are_empty() {
         show_agent_reasoning: true,
         show_raw_agent_reasoning: false,
         last_message_path: None,
+        last_turn_diff: None,
         final_message: Some("streamed answer".to_string()),
         final_message_rendered: false,
         emit_final_message_on_shutdown: false,
@@ -440,6 +484,7 @@ fn turn_failed_clears_stale_final_message() {
         show_agent_reasoning: true,
         show_raw_agent_reasoning: false,
         last_message_path: None,
+        last_turn_diff: None,
         final_message: Some("partial answer".to_string()),
         final_message_rendered: true,
         emit_final_message_on_shutdown: true,
@@ -485,6 +530,7 @@ fn turn_interrupted_clears_stale_final_message() {
         show_agent_reasoning: true,
         show_raw_agent_reasoning: false,
         last_message_path: None,
+        last_turn_diff: None,
         final_message: Some("partial answer".to_string()),
         final_message_rendered: true,
         emit_final_message_on_shutdown: true,
