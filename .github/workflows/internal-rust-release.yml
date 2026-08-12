@@ -85,8 +85,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
+          # - runner: ubuntu-24.04-arm
+          #   target: aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v6
         with:
@@ -281,20 +289,70 @@ jobs:
         with:
           path: dist
 
-      - name: Replace musl release assets
-        if: ${{ needs.meta.outputs.publish == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: facebook/install-dotslash@v2
+
+      - name: Stage rg release assets
         shell: bash
         run: |
           set -euo pipefail
-          asset_dir="dist/internal-release-x86_64-unknown-linux-musl"
-          gh release upload "${{ needs.meta.outputs.internal_tag }}" \
-            "${asset_dir}/codex-x86_64-unknown-linux-musl.tar.gz" \
-            "${asset_dir}/codex-responses-api-proxy-x86_64-unknown-linux-musl.tar.gz" \
-            "${asset_dir}/codex-symbols-x86_64-unknown-linux-musl.tar.gz" \
-            --clobber \
-            --repo "${GITHUB_REPOSITORY}"
+          rg_root="${RUNNER_TEMP}/internal-rg"
+          mkdir -p "${rg_root}"
+          python3 codex-cli/scripts/install_native_deps.py --component rg "${rg_root}"
+
+          for target in \
+            x86_64-unknown-linux-musl \
+            x86_64-apple-darwin \
+            aarch64-apple-darwin
+          do
+            rg_dir="${rg_root}/vendor/${target}/path"
+            tar -C "${rg_dir}" -czf "dist/rg-${target}.tar.gz" rg
+          done
+
+      - name: Prepare static release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp codex-rs/core/config.schema.json dist/config.schema.json
+          cp scripts/install/install.sh dist/install.sh
+          cp scripts/install/install.ps1 dist/install.ps1
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch https://github.com/openai/codex "refs/tags/${{ needs.meta.outputs.upstream_tag }}:refs/tags/${{ needs.meta.outputs.upstream_tag }}"
+          upstream_commit="$(git rev-parse "refs/tags/${{ needs.meta.outputs.upstream_tag }}^{commit}")"
+          mapfile -t patch_commits < <(git rev-list --reverse --no-merges "${upstream_commit}..HEAD")
+
+          notes_path="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "Internal Codex CLI release for upstream \`${{ needs.meta.outputs.upstream_tag }}\`."
+            echo
+            echo "- release ref: \`${{ needs.meta.outputs.release_ref }}\`"
+            echo "- release tag: \`${{ needs.meta.outputs.internal_tag }}\`"
+            echo
+            echo "## Patch Stack"
+            if [[ ${#patch_commits[@]} -eq 0 ]]; then
+              echo "- No fork-only patch commits found between upstream tag and release ref."
+            else
+              for commit in "${patch_commits[@]}"; do
+                git log -1 --format='- `%h` %s' "${commit}"
+              done
+            fi
+          } > "${notes_path}"
+          echo "path=${notes_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: ${{ needs.meta.outputs.publish == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.meta.outputs.version }}-internal
+          tag_name: ${{ needs.meta.outputs.internal_tag }}
+          target_commitish: ${{ needs.meta.outputs.release_ref }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: dist/**
+          prerelease: false
 
       - name: Upload dry-run bundle
         if: ${{ needs.meta.outputs.publish != 'true' }}
