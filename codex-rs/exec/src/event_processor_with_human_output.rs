@@ -32,6 +32,7 @@ pub(crate) struct EventProcessorWithHumanOutput {
     show_agent_reasoning: bool,
     show_raw_agent_reasoning: bool,
     last_message_path: Option<PathBuf>,
+    last_turn_diff: Option<String>,
     final_message: Option<String>,
     final_message_rendered: bool,
     emit_final_message_on_shutdown: bool,
@@ -57,6 +58,7 @@ impl EventProcessorWithHumanOutput {
             show_agent_reasoning: !config.hide_agent_reasoning,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             last_message_path,
+            last_turn_diff: None,
             final_message: None,
             final_message_rendered: false,
             emit_final_message_on_shutdown: false,
@@ -332,8 +334,12 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 TurnStatus::InProgress => CodexStatus::Running,
             },
             ServerNotification::TurnDiffUpdated(notification) => {
-                if !notification.diff.trim().is_empty() {
-                    eprintln!("{}", notification.diff);
+                let diff = notification.diff;
+                if self.last_turn_diff.as_deref() != Some(diff.as_str()) {
+                    if !diff.trim().is_empty() {
+                        eprintln!("{diff}");
+                    }
+                    self.last_turn_diff = Some(diff);
                 }
                 CodexStatus::Running
             }
@@ -360,7 +366,10 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
                 CodexStatus::Running
             }
-            ServerNotification::TurnStarted(_) => CodexStatus::Running,
+            ServerNotification::TurnStarted(_) => {
+                self.last_turn_diff = None;
+                CodexStatus::Running
+            }
             _ => CodexStatus::Running,
         }
     }
