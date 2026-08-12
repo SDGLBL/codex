@@ -8,6 +8,7 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
+use pretty_assertions::assert_eq;
 use std::fs;
 use std::process::Command;
 use tempfile::tempdir;
@@ -64,6 +65,13 @@ async fn test_apply_patch_tool() -> anyhow::Result<()> {
 -Hello world
 +Final text
 *** End Patch"#;
+    let delete_patch = r#"*** Begin Patch
+*** Delete File: test.md
+*** End Patch"#;
+    let readd_patch = r#"*** Begin Patch
+*** Add File: test.md
++Final text
+*** End Patch"#;
     let response_streams = vec![
         sse(vec![
             ev_apply_patch_custom_tool_call("request_0", add_patch),
@@ -73,18 +81,42 @@ async fn test_apply_patch_tool() -> anyhow::Result<()> {
             ev_apply_patch_custom_tool_call("request_1", update_patch),
             ev_completed("request_1"),
         ]),
-        sse(vec![ev_completed("request_2")]),
+        sse(vec![
+            ev_apply_patch_custom_tool_call("request_2", delete_patch),
+            ev_completed("request_2"),
+        ]),
+        sse(vec![
+            ev_apply_patch_custom_tool_call("request_3", readd_patch),
+            ev_completed("request_3"),
+        ]),
+        sse(vec![ev_completed("request_4")]),
     ];
     let server = start_mock_server().await;
     mount_sse_sequence(&server, response_streams).await;
 
-    test.cmd_with_server(&server)
+    let output = test
+        .cmd_with_server(&server)
         .arg("--skip-git-repo-check")
         .arg("-s")
         .arg("danger-full-access")
         .arg("foo")
-        .assert()
-        .success();
+        .output()?;
+    assert!(output.status.success(), "exec run failed: {output:?}");
+
+    let stderr = String::from_utf8(output.stderr)?;
+    assert_eq!(
+        stderr
+            .lines()
+            .filter(|line| *line == "+Hello world")
+            .count(),
+        1,
+        "unexpected initial turn diff output: {stderr}"
+    );
+    assert_eq!(
+        stderr.lines().filter(|line| *line == "+Final text").count(),
+        2,
+        "unexpected turn diff output: {stderr}"
+    );
 
     let final_path = tmp_path.join("test.md");
     let contents = std::fs::read_to_string(&final_path).expect("final file should be readable");
