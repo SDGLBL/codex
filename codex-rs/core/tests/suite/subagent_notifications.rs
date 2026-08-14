@@ -963,6 +963,33 @@ async fn subagent_notification_is_included_without_wait() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v1_non_fork_child_uses_own_wire_session_id() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let (test, spawned_id) =
+        setup_turn_one_with_spawned_child(&server, /*child_response_delay*/ None).await?;
+    let requests = server.received_requests().await.unwrap_or_default();
+    let child_request = requests
+        .into_iter()
+        .find(|request| {
+            body_contains(request, CHILD_PROMPT) && !body_contains(request, SPAWN_CALL_ID)
+        })
+        .ok_or_else(|| anyhow::anyhow!("expected non-fork child request"))?;
+
+    assert_eq!(
+        child_request
+            .headers
+            .get("session-id")
+            .and_then(|value| value.to_str().ok()),
+        Some(spawned_id.as_str())
+    );
+    assert_ne!(spawned_id, test.session_configured.session_id.to_string());
+
+    Ok(())
+}
+
 #[test_case(ThreadHistoryMode::Legacy; "legacy")]
 #[test_case(ThreadHistoryMode::Paginated; "paginated")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2402,6 +2429,24 @@ async fn multi_agent_v2_spawn_sends_agent_message_to_child(
         .into_iter()
         .find(|thread_id| *thread_id != root_thread_id)
         .expect("child thread ID");
+    let root_wire_session_id = root_thread_id.to_string();
+    assert_ne!(child_thread_id, root_thread_id);
+    assert_eq!(
+        child_request.header("session-id").as_deref(),
+        Some(root_wire_session_id.as_str())
+    );
+
+    let child_rollout_path = test
+        .thread_manager
+        .get_thread(child_thread_id)
+        .await?
+        .rollout_path()
+        .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
+    let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
+    assert_eq!(
+        child_session_meta.meta.wire_session_id,
+        Some(root_thread_id)
+    );
     let logs = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let logs = String::from_utf8(output.lock().expect("buffer lock").clone())
