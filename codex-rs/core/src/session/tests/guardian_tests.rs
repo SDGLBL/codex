@@ -837,6 +837,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         attestation_provider: None,
         external_time_provider: None,
         inherited_multi_agent_version: None,
+        inherited_wire_session_id: None,
         git_enrichment_policy: GitEnrichmentPolicy::Skip,
         windows_sandbox_proxy_settings_mode:
             codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve,
