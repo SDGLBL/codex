@@ -2522,6 +2522,30 @@ impl ThreadManagerState {
             (Arc::clone(&self.extensions), Arc::clone(&self.mcp_manager))
         };
         let tracked_session_source = session_source.clone();
+        let inherited_wire_session_id = if startup_context.multi_agent_version == Some(MultiAgentVersion::V2)
+            && matches!(
+                &initial_history,
+                InitialHistory::New | InitialHistory::Cleared
+            )
+            && let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            }) = &session_source
+        {
+            // Legacy V1 fresh children intentionally start a separate wire session. V2 spawn
+            // messages are opaque ciphertext created in the parent's wire session, so a V2 child
+            // must inherit that transport identity even when it deliberately inherits no history.
+            Some(
+                self.get_thread(*parent_thread_id)
+                    .await?
+                    .codex
+                    .session
+                    .wire_session_id()
+                    .await,
+            )
+        } else {
+            None
+        };
+
         let source_changed_during_startup = Arc::new(AtomicBool::new(false));
         {
             let mut starting = self
@@ -2598,6 +2622,7 @@ impl ThreadManagerState {
             attestation_provider: self.attestation_provider.clone(),
             external_time_provider: self.external_time_provider.clone(),
             inherited_multi_agent_version: startup_context.multi_agent_version,
+            inherited_wire_session_id,
             git_enrichment_policy: if matches!(
                 &tracked_session_source,
                 SessionSource::Internal(InternalSessionSource::Guardian)
