@@ -458,6 +458,7 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
     pub(crate) external_time_provider: Option<Arc<dyn TimeProvider>>,
     pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
+    pub(crate) inherited_wire_session_id: Option<ThreadId>,
     pub(crate) git_enrichment_policy: GitEnrichmentPolicy,
     pub(crate) windows_sandbox_proxy_settings_mode:
         codex_sandboxing::WindowsSandboxProxySettingsMode,
@@ -550,6 +551,7 @@ impl Session {
             attestation_provider,
             external_time_provider,
             inherited_multi_agent_version,
+            inherited_wire_session_id,
             git_enrichment_policy,
             windows_sandbox_proxy_settings_mode,
         } = args;
@@ -702,7 +704,9 @@ impl Session {
             ),
             codex_home: config.codex_home.clone(),
             thread_name: None,
-            wire_session_id: conversation_history.wire_session_id(),
+            wire_session_id: conversation_history
+                .wire_session_id()
+                .or(inherited_wire_session_id),
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
