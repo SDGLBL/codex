@@ -104,6 +104,8 @@ pub const DEFAULT_APPROVAL_REVIEW_PREFERRED_MODEL: &str = "codex-auto-review";
 
 const API_KEY_APPROVAL_REVIEW_PREFERRED_MODEL: &str = "gpt-5.6-luna";
 
+const INTERNAL_AZURE_RESPONSES_BASE_URL: &str = "https://search.bytedance.net/gpt/openapi/online";
+
 /// Default model used for memory extraction when a provider does not require a
 /// backend-specific model ID.
 pub const DEFAULT_MEMORY_EXTRACTION_PREFERRED_MODEL: &str = "gpt-5.6-luna";
@@ -297,7 +299,11 @@ impl ModelProvider for ConfiguredModelProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        let remote_compaction = if self.info.is_openai()
+        let remote_compaction = if self.info.base_url.as_deref().is_some_and(|base_url| {
+            base_url.trim_end_matches('/') == INTERNAL_AZURE_RESPONSES_BASE_URL
+        }) {
+            RemoteCompactionSupport::Unsupported
+        } else if self.info.is_openai()
             || is_azure_responses_provider(&self.info.name, self.info.base_url.as_deref())
         {
             RemoteCompactionSupport::V2
@@ -615,6 +621,14 @@ mod tests {
                     ..ModelProviderInfo::default()
                 },
                 RemoteCompactionSupport::V2,
+            ),
+            (
+                ModelProviderInfo {
+                    name: "Azure".to_string(),
+                    base_url: Some(format!("{INTERNAL_AZURE_RESPONSES_BASE_URL}/")),
+                    ..ModelProviderInfo::default()
+                },
+                RemoteCompactionSupport::Unsupported,
             ),
             (
                 provider_for("https://example.test/v1".to_string()),

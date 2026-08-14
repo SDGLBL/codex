@@ -1690,7 +1690,6 @@ impl ThreadManagerState {
             Some(
                 self.get_thread(*parent_thread_id)
                     .await?
-                    .codex
                     .session
                     .wire_session_id()
                     .await,

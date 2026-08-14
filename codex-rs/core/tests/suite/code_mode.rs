@@ -1264,7 +1264,6 @@ if (!tool) {
             "wait".to_string(),
             "request_user_input".to_string(),
             "web_search".to_string(),
-            "image_generation".to_string(),
         ]
     );
 

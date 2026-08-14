@@ -11,7 +11,6 @@ use crate::compact::content_items_to_text;
 use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::compact_model_fallback::record_model_fallback;
 use crate::compact_model_fallback::should_retry_with_current_model;
-use crate::compact_remote_history::HistoryItemGroup;
 use crate::compact_remote_history::history_item_groups;
 use crate::context::world_state::WorldState;
 use crate::context_manager::ContextManager;

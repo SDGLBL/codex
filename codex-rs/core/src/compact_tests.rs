@@ -487,6 +487,43 @@ async fn process_compacted_history_keeps_assistant_with_encrypted_reasoning() {
 }
 
 #[tokio::test]
+async fn process_compacted_history_keeps_attached_image_notice_with_assistant() {
+    let compacted_history = vec![
+        ResponseItem::Reasoning {
+            id: Some(ResponseItemId::with_suffix("rs", "123")),
+            summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                text: "thinking".to_string(),
+            }],
+            content: None,
+            encrypted_content: Some("encrypted-content".to_string()),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "assistant output".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<image_resize_notice>resized</image_resize_notice>".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ];
+
+    let refreshed =
+        process_compacted_history_without_initial_context(compacted_history.clone()).await;
+    assert_eq!(refreshed, compacted_history);
+}
+
+#[tokio::test]
 async fn process_compacted_history_converts_assistant_without_reasoning_to_summary_message() {
     let compacted_history = vec![ResponseItem::Message {
         id: None,
