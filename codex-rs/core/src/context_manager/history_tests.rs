@@ -1531,7 +1531,7 @@ fn record_items_preserves_code_mode_exec_output_after_exec_budgeting() {
     history.record_items([&call, &output], policy);
 
     assert_eq!(history.items.len(), 2);
-    match &history.items[1] {
+    match &history.items[1].item {
         ResponseItem::CustomToolCallOutput { output, .. } => {
             assert_eq!(output.text_content().unwrap_or_default(), long_output);
         }

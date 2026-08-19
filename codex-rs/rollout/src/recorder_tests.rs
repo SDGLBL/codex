@@ -779,6 +779,7 @@ async fn rollout_id_preserves_session_meta_thread_id() -> std::io::Result<()> {
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,

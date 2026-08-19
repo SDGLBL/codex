@@ -195,7 +195,7 @@ impl ContextManager {
             }
 
             let processed = ResponseItemEnvelope {
-                item: Self::process_item(item, policy),
+                item: self.process_item(item, policy),
                 metadata: metadata.cloned(),
             };
             Arc::make_mut(&mut self.items).push(processed);
@@ -467,7 +467,7 @@ impl ContextManager {
         normalize::strip_audio_when_unsupported(input_modalities, items);
     }
 
-    fn process_item(item: &ResponseItem, policy: TruncationPolicy) -> ResponseItem {
+    fn process_item(&self, item: &ResponseItem, policy: TruncationPolicy) -> ResponseItem {
         let policy_with_serialization_budget = policy * 1.2;
         match item {
             ResponseItem::FunctionCallOutput {
@@ -579,7 +579,7 @@ impl ContextManager {
 
         self.items.iter().rev().any(|item| {
             matches!(
-                item,
+                &item.item,
                 ResponseItem::CustomToolCall {
                     call_id: custom_call_id,
                     name,
