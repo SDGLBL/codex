@@ -140,6 +140,7 @@ async fn create_replacement_recorder(
     };
     let mut params = RolloutRecorderParams::new(
         source_meta.id,
+        source_meta.wire_session_id.unwrap_or(source_meta.id),
         source_meta.forked_from_id,
         source_meta.parent_thread_id,
         source_meta.source,

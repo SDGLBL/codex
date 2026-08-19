@@ -468,6 +468,7 @@ impl LunaSampler {
             include: Vec::new(),
             service_tier: self.config.service_tier.clone(),
             prompt_cache_key: Some(format!("guardian-v2:{}", self.config.thread_id)),
+            max_output_tokens: None,
             text: create_text_param_for_request(
                 /*verbosity*/ None,
                 &Some(request.output_schema),
