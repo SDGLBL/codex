@@ -1158,7 +1158,6 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
     warn "Found incomplete existing release at $release_dir; reinstalling."
   fi
 
-  archive_path="$tmp_dir/$asset"
   checksum_path="$tmp_dir/$checksum_asset"
 
   step "Downloading Codex CLI"
@@ -1169,6 +1168,9 @@ if ! release_dir_is_complete "$release_dir" "$resolved_version" "$vendor_target"
   else
     expected_digest="$(release_asset_digest "$asset")"
   fi
+  # Digest verification uses global shell variables, so rebuild the primary
+  # archive path after verifying any companion internal archive.
+  archive_path="$tmp_dir/$asset"
   download_file_with_fallback "$download_url" "$download_fallback_url" "$archive_path" "$expected_digest" "$asset"
 
   step "Installing standalone package to $release_dir"
