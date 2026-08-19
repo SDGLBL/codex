@@ -131,6 +131,29 @@ class InstallShTest(unittest.TestCase):
             )
             self.assertTrue(os.access(host_path, os.X_OK))
 
+    def test_internal_raw_release_keeps_companion_archive_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            codex_archive_path, rg_archive_path, metadata_json = (
+                create_internal_raw_release(root)
+            )
+
+            result, _requests = run_installer_in(
+                root,
+                VERSION,
+                metadata_json=metadata_json,
+                internal_codex_archive_path=codex_archive_path,
+                internal_rg_archive_path=rg_archive_path,
+                repository="SDGLBL/codex",
+                use_mirror=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            install_bin = root / "install-bin"
+            self.assertTrue(os.access(install_bin / "codex", os.X_OK))
+            self.assertTrue(os.access(install_bin / "codex-code-mode-host", os.X_OK))
+            self.assertTrue(os.access(install_bin / "rg", os.X_OK))
+
     def test_releases_latest_installs_verified_package_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -533,6 +556,9 @@ def run_installer_in(
     checksum_path: Path | None = None,
     releases_checksum_path: Path | None = None,
     legacy_archive_path: Path | None = None,
+    internal_codex_archive_path: Path | None = None,
+    internal_rg_archive_path: Path | None = None,
+    repository: str = "openai/codex",
     force_macos: bool = False,
     use_mirror: bool | None = False,
     releases_mode: str = "",
@@ -627,6 +653,20 @@ def run_installer_in(
                   exit 22
                 fi
                 ;;
+              https://github.com/SDGLBL/codex/releases/download/*/codex-*.tar.gz)
+                if [ -n "$CODEX_TEST_INTERNAL_CODEX_ARCHIVE_PATH" ]; then
+                  cp "$CODEX_TEST_INTERNAL_CODEX_ARCHIVE_PATH" "$output"
+                else
+                  exit 22
+                fi
+                ;;
+              https://github.com/SDGLBL/codex/releases/download/*/rg-*.tar.gz)
+                if [ -n "$CODEX_TEST_INTERNAL_RG_ARCHIVE_PATH" ]; then
+                  cp "$CODEX_TEST_INTERNAL_RG_ARCHIVE_PATH" "$output"
+                else
+                  exit 22
+                fi
+                ;;
               *)
                 exit 22
                 ;;
@@ -655,7 +695,7 @@ def run_installer_in(
         {
             "CODEX_HOME": str(root / "codex-home"),
             "CODEX_INSTALL_DIR": str(root / "install-bin"),
-            "CODEX_INSTALL_REPOSITORY": "openai/codex",
+            "CODEX_INSTALL_REPOSITORY": repository,
             "CODEX_INSTALL_RELEASE_TAG_PREFIX": "rust-v",
             "CODEX_NON_INTERACTIVE": "1",
             "CODEX_RELEASE": release,
@@ -665,6 +705,10 @@ def run_installer_in(
                 releases_checksum_path or checksum_path or ""
             ),
             "CODEX_TEST_LEGACY_ARCHIVE_PATH": str(legacy_archive_path or ""),
+            "CODEX_TEST_INTERNAL_CODEX_ARCHIVE_PATH": str(
+                internal_codex_archive_path or ""
+            ),
+            "CODEX_TEST_INTERNAL_RG_ARCHIVE_PATH": str(internal_rg_archive_path or ""),
             "CODEX_TEST_METADATA_FAILURE": "1" if metadata_failure else "0",
             "CODEX_TEST_METADATA_JSON": (
                 metadata_json if metadata_json is not None else release_metadata()
@@ -688,6 +732,13 @@ def run_installer_in(
     else:
         env["CODEX_INSTALLER_USE_RELEASES_OPENAI_COM"] = (
             "TRUE" if use_mirror else "false"
+        )
+    if repository == "SDGLBL/codex":
+        env.update(
+            {
+                "CODEX_INSTALL_AK": "test-ak",
+                "CODEX_INSTALL_AZURE_BASE_URL": "https://example.invalid/modelhub",
+            }
         )
     result = subprocess.run(
         ["/bin/sh", str(INSTALL_SCRIPT)],
@@ -774,6 +825,42 @@ def create_legacy_release(root: Path) -> tuple[Path, str]:
         indent=2,
     )
     return archive_path, metadata_json
+
+
+def create_internal_raw_release(root: Path) -> tuple[Path, Path, str]:
+    target = "x86_64-unknown-linux-musl"
+    codex_dir = root / "internal-codex"
+    codex_dir.mkdir()
+    write_executable(
+        codex_dir / "codex",
+        f"#!/bin/sh\nprintf 'codex-cli {VERSION}\\n'\n",
+    )
+    write_executable(codex_dir / "codex-code-mode-host", "#!/bin/sh\nexit 0\n")
+    codex_asset = f"codex-{target}.tar.gz"
+    codex_archive_path = root / codex_asset
+    with tarfile.open(codex_archive_path, "w:gz") as archive:
+        for path in codex_dir.iterdir():
+            archive.add(path, arcname=path.name)
+
+    rg_dir = root / "internal-rg"
+    rg_dir.mkdir()
+    write_executable(rg_dir / "rg", "#!/bin/sh\nexit 0\n")
+    rg_asset = f"rg-{target}.tar.gz"
+    rg_archive_path = root / rg_asset
+    with tarfile.open(rg_archive_path, "w:gz") as archive:
+        archive.add(rg_dir / "rg", arcname="rg")
+
+    assets = []
+    for name, path in (
+        (codex_asset, codex_archive_path),
+        (rg_asset, rg_archive_path),
+    ):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assets.append({"name": name, "digest": f"sha256:{digest}"})
+    metadata_json = json.dumps(
+        {"assets": assets, "tag_name": f"internal-rust-v{VERSION}"}, indent=2
+    )
+    return codex_archive_path, rg_archive_path, metadata_json
 
 
 def write_executable(path: Path, contents: str) -> None:
