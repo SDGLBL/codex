@@ -145,12 +145,6 @@ fn ev_assistant_final_message(id: &str, text: &str) -> serde_json::Value {
     event
 }
 
-fn has_subagent_notification(req: &ResponsesRequest) -> bool {
-    req.message_input_texts("user")
-        .iter()
-        .any(|text| text.contains("<subagent_notification>"))
-}
-
 fn tool_parameter_description(tool: &Value, parameter_name: &str) -> Option<String> {
     tool.get("parameters")
         .and_then(|parameters| parameters.get("properties"))
