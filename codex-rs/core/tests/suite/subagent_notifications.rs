@@ -1505,6 +1505,11 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
             .map(|id| id.to_string()),
         Some(parent_session_id.clone())
     );
+    child_thread.submit(Op::Shutdown).await?;
+    wait_for_event(&child_thread, |event| {
+        matches!(event, EventMsg::ShutdownComplete)
+    })
+    .await;
 
     let resumed_child_turn = mount_sse_once_match(
         &server,
