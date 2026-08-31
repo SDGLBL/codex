@@ -119,6 +119,7 @@ async fn split_homes_support_backfill_listing_and_paginated_history() {
         &rollout_config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,
@@ -582,6 +583,7 @@ async fn paginated_realtime_items_materialize_separately_in_rollout_order() {
         .create_thread(CreateThreadParams {
             session_id: legacy_thread_id.into(),
             thread_id: legacy_thread_id,
+            wire_session_id: legacy_thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -2575,6 +2577,7 @@ async fn create_paginated_subagent_thread(
         .create_thread(CreateThreadParams {
             session_id: thread_id.into(),
             thread_id,
+            wire_session_id: thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,

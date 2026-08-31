@@ -615,7 +615,7 @@ impl ContextManager {
 
         self.items.iter().rev().any(|item| {
             matches!(
-                item,
+                &item.item,
                 ResponseItem::CustomToolCall {
                     call_id: custom_call_id,
                     name,
