@@ -525,6 +525,7 @@ impl LunaSampler {
             text: None,
             client_metadata: None,
             access_programs: None,
+            max_output_tokens: None,
         };
         let (supersede, mut superseded) = oneshot::channel();
         let scored = Arc::new(AtomicBool::new(false));

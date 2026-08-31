@@ -145,12 +145,6 @@ fn ev_assistant_final_message(id: &str, text: &str) -> serde_json::Value {
     event
 }
 
-fn has_subagent_notification(req: &ResponsesRequest) -> bool {
-    req.message_input_texts("user")
-        .iter()
-        .any(|text| text.contains("<subagent_notification>"))
-}
-
 fn tool_parameter_description(tool: &Value, parameter_name: &str) -> Option<String> {
     tool.get("parameters")
         .and_then(|parameters| parameters.get("properties"))
@@ -1257,10 +1251,9 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         Some(parent_session_id.as_str())
     );
 
-    let child_rollout_path = test
-        .thread_manager
-        .get_thread(codex_protocol::ThreadId::from_string(&spawned_id)?)
-        .await?
+    let child_thread_id = codex_protocol::ThreadId::from_string(&spawned_id)?;
+    let child_thread = test.thread_manager.get_thread(child_thread_id).await?;
+    let child_rollout_path = child_thread
         .rollout_path()
         .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
     let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
@@ -1271,6 +1264,11 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
             .map(|id| id.to_string()),
         Some(parent_session_id.clone())
     );
+    child_thread.submit(Op::Shutdown).await?;
+    wait_for_event(&child_thread, |event| {
+        matches!(event, EventMsg::ShutdownComplete)
+    })
+    .await;
 
     let resumed_child_turn = mount_sse_once_match(
         &server,

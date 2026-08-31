@@ -61,6 +61,7 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
         .create_thread(CreateThreadParams {
             session_id: thread_id.into(),
             thread_id,
+            wire_session_id: thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
