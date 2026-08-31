@@ -979,6 +979,7 @@ mod tests {
                 "traceparent".to_string(),
                 "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01".to_string(),
             )])),
+            max_output_tokens: None,
         };
         let request = ResponsesWsRequest::ResponseCreate(ResponseCreateWsRequest {
             previous_response_id: Some("resp-1".to_string()),
