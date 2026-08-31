@@ -76,14 +76,14 @@ fn compacted_user_message(text: &str) -> CompactedUserMessage {
 async fn process_compacted_history_without_initial_context(
     compacted_history: Vec<ResponseItem>,
 ) -> Vec<ResponseItem> {
-    let (session, turn_context) = crate::session::tests::make_session_and_context().await;
-    crate::compact_remote::process_compacted_history(
+    let (session, _) = crate::session::tests::make_session_and_context().await;
+    let (history, _) = crate::compact_remote::process_compacted_history(
         &session,
-        &turn_context,
         compacted_history,
-        InitialContextInjection::DoNotInject,
+        &InitialContextInjection::DoNotInject,
     )
-    .await
+    .await;
+    history
 }
 
 #[test]
@@ -537,7 +537,7 @@ async fn process_compacted_history_drops_legacy_warnings() {
 async fn process_compacted_history_keeps_assistant_with_encrypted_reasoning() {
     let compacted_history = vec![
         ResponseItem::Reasoning {
-            id: "rs_123".to_string(),
+            id: Some(ResponseItemId::with_suffix("rs", "123")),
             summary: vec![ReasoningItemReasoningSummary::SummaryText {
                 text: "thinking".to_string(),
             }],
@@ -591,7 +591,7 @@ async fn process_compacted_history_converts_assistant_without_reasoning_to_summa
 async fn process_compacted_history_drops_reasoning_without_encrypted_content() {
     let compacted_history = vec![
         ResponseItem::Reasoning {
-            id: "rs_123".to_string(),
+            id: Some(ResponseItemId::with_suffix("rs", "123")),
             summary: vec![ReasoningItemReasoningSummary::SummaryText {
                 text: "thinking".to_string(),
             }],

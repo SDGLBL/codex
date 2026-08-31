@@ -11,7 +11,6 @@ use crate::compact::content_items_to_text;
 use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::compact_model_fallback::record_model_fallback;
 use crate::compact_model_fallback::should_retry_with_current_model;
-use crate::compact_remote_history::HistoryItemGroup;
 use crate::compact_remote_history::history_item_groups;
 use crate::context::world_state::WorldState;
 use crate::context_manager::ContextManager;
@@ -372,9 +371,7 @@ pub(crate) async fn process_annotated_compacted_history(
 /// - `user`-role warnings that parse as `TurnItem::UserMessage` and compaction-generated summary
 ///   messages. Legacy warning fragments are filtered by `parse_turn_item` before they reach this
 ///   check.
-fn retain_compacted_history_items(
-    items: Vec<ResponseItemEnvelope>,
-) -> Vec<ResponseItemEnvelope> {
+fn retain_compacted_history_items(items: Vec<ResponseItemEnvelope>) -> Vec<ResponseItemEnvelope> {
     let mut retained = Vec::with_capacity(items.len());
     let mut pending_reasoning = None;
 
