@@ -211,23 +211,10 @@ jobs:
             exit 1
           }
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' }}
-        name: Configure musl rusty_v8 artifact overrides
-        env:
-          TARGET: ${{ matrix.target }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(python3 "${GITHUB_WORKSPACE}/.github/scripts/rusty_v8_bazel.py" resolved-v8-crate-version)"
-          release_tag="rusty-v8-v${version}"
-          base_url="https://github.com/openai/codex/releases/download/${release_tag}"
-          archive="https://github.com/openai/codex/releases/download/rusty-v8-v${version}/librusty_v8_release_${TARGET}.a.gz"
-          binding_dir="${RUNNER_TEMP}/rusty_v8"
-          binding_path="${binding_dir}/src_binding_release_${TARGET}.rs"
-          mkdir -p "${binding_dir}"
-          curl -fsSL "${base_url}/src_binding_release_${TARGET}.rs" -o "${binding_path}"
-          echo "RUSTY_V8_ARCHIVE=${archive}" >> "$GITHUB_ENV"
-          echo "RUSTY_V8_SRC_BINDING_PATH=${binding_path}" >> "$GITHUB_ENV"
+      - name: Configure rusty_v8 artifact overrides and verify checksums
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: ${{ matrix.target }}
 
       - name: Build release binaries
         shell: bash
@@ -239,9 +226,9 @@ jobs:
             export CARGO_PROFILE_RELEASE_LTO=false
             export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
             cargo build --locked --target "${target}" --release --jobs 1 --bin codex-responses-api-proxy
-            cargo build --locked --target "${target}" --release --jobs 1 --bin codex
+            cargo build --locked --target "${target}" --release --jobs 1 --bin codex --bin codex-code-mode-host
           else
-            cargo build --locked --target "${target}" --release --bin codex --bin codex-responses-api-proxy
+            cargo build --locked --target "${target}" --release --bin codex --bin codex-code-mode-host --bin codex-responses-api-proxy
           fi
 
       - name: Stage internal release assets
@@ -257,15 +244,16 @@ jobs:
             --artifact-name "${{ matrix.target }}" \
             --release-dir "${release_dir}" \
             --archive-dir "${dest}" \
-            --binaries "codex codex-responses-api-proxy"
+            --binaries "codex codex-code-mode-host codex-responses-api-proxy"
 
           cp "${release_dir}/codex" "${dest}/codex"
+          cp "${release_dir}/codex-code-mode-host" "${dest}/codex-code-mode-host"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
-          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex
+          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex codex-code-mode-host
           tar -C "${dest}" -czf "${dest}/codex-responses-api-proxy-${{ matrix.target }}.tar.gz" codex-responses-api-proxy
 
-          rm "${dest}/codex" "${dest}/codex-responses-api-proxy"
+          rm "${dest}/codex" "${dest}/codex-code-mode-host" "${dest}/codex-responses-api-proxy"
 
       - uses: actions/upload-artifact@v7
         with:
