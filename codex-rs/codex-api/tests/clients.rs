@@ -312,7 +312,6 @@ impl Flaky429Transport {
     }
 }
 
-#[async_trait]
 impl HttpTransport for Flaky429Transport {
     async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
         Err(TransportError::Build("execute should not run".to_string()))
@@ -418,6 +417,7 @@ async fn responses_client_stream_request_preserves_item_ids() -> Result<()> {
         text: None,
         client_metadata: None,
         access_programs: None,
+        max_output_tokens: None,
     };
     let expected = serde_json::to_value(&request)?;
 
@@ -551,17 +551,19 @@ async fn responses_request_omits_absent_max_output_tokens() -> Result<()> {
         model: "gpt-test".into(),
         instructions: "Say hi".into(),
         input: Vec::new(),
-        tools: Vec::new(),
+        tools: None,
         tool_choice: "auto".into(),
         parallel_tool_calls: false,
         reasoning: None,
         store: false,
         stream: true,
+        stream_options: None,
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        access_programs: None,
         max_output_tokens: None,
     };
 
@@ -577,11 +579,7 @@ async fn responses_request_omits_absent_max_output_tokens() -> Result<()> {
 
     let requests = state.take_stream_requests();
     assert_eq!(requests.len(), 1);
-    let body = requests[0]
-        .body
-        .as_ref()
-        .and_then(RequestBody::json)
-        .expect("request body should be JSON");
+    let body = serde_json::from_slice::<serde_json::Value>(request_body_bytes(&requests[0]))?;
     assert_eq!(body.get("max_output_tokens"), None);
 
     Ok(())
@@ -657,17 +655,19 @@ async fn streaming_client_retries_on_http_429_when_enabled() -> Result<()> {
         model: "gpt-test".into(),
         instructions: "Say hi".into(),
         input: Vec::new(),
-        tools: Vec::new(),
+        tools: None,
         tool_choice: "auto".into(),
         parallel_tool_calls: false,
         reasoning: None,
         store: false,
         stream: true,
+        stream_options: None,
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        access_programs: None,
         max_output_tokens: None,
     };
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));

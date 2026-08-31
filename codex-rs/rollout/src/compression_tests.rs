@@ -676,6 +676,7 @@ fn write_rollout(path: &std::path::Path, thread_id: ThreadId, message: &str) -> 
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             forked_from_id: None,
             forked_from_ordinal_exclusive: None,
             parent_thread_id: None,
