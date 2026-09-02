@@ -378,7 +378,7 @@ async fn multi_agent_v2_wait_guidance_uses_overridable_developer_instructions(
         wait_agent_tool
             .pointer("/parameters/properties/timeout_ms/description")
             .and_then(Value::as_str),
-        Some("Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.")
+        Some("Timeout in milliseconds. Defaults to 30000, min 10000, max 14400000.")
     );
 
     Ok(())
@@ -555,7 +555,7 @@ async fn multi_agent_v2_cold_resume_refreshes_legacy_usage_hints_once(
                 wait_agent_tool
                     .pointer("/parameters/properties/timeout_ms/description")
                     .and_then(Value::as_str),
-                Some("Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000.")
+                Some("Timeout in milliseconds. Defaults to 30000, min 10000, max 14400000.")
             );
         }
     }

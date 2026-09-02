@@ -620,6 +620,7 @@ impl Session {
             request_kind,
         );
         CodexResponsesMetadata {
+            wire_session_id: self.wire_session_id().await.to_string(),
             window_number: Some(window_number),
             context_window_id: Some(context_window_id),
             history_ingest_requested: turn_context
