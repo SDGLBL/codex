@@ -1491,10 +1491,9 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
         Some(parent_session_id.as_str())
     );
 
-    let child_rollout_path = test
-        .thread_manager
-        .get_thread(ThreadId::from_string(&spawned_id)?)
-        .await?
+    let child_thread_id = ThreadId::from_string(&spawned_id)?;
+    let child_thread = test.thread_manager.get_thread(child_thread_id).await?;
+    let child_rollout_path = child_thread
         .rollout_path()
         .ok_or_else(|| anyhow::anyhow!("expected child rollout path"))?;
     let child_session_meta = read_session_meta_line(child_rollout_path.as_path()).await?;
