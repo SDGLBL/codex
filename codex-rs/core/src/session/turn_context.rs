@@ -708,7 +708,7 @@ impl Session {
     #[instrument(name = "turn_context.make", level = "trace", skip_all)]
     pub(crate) fn make_turn_context(
         thread_id: ThreadId,
-        _session_id: SessionId,
+        session_id: SessionId,
         auth_manager: Option<Arc<AuthManager>>,
         session_telemetry: &SessionTelemetry,
         provider: SharedModelProvider,
@@ -759,9 +759,8 @@ impl Session {
             per_turn_config.approvals_reviewer,
         );
         let per_turn_config = Arc::new(per_turn_config);
-        let wire_session_id = session_configuration.wire_session_id.unwrap_or(thread_id);
         let turn_metadata_state = Arc::new(TurnMetadataState::new(
-            wire_session_id.to_string(),
+            session_id.to_string(),
             thread_id.to_string(),
             session_configuration.forked_from_thread_id,
             session_configuration.parent_thread_id,
