@@ -216,10 +216,24 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
+      - name: Build bundled Linux sandbox and export digest
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          cargo build --locked --target "${target}" --release --jobs 1 --bin bwrap
+          bwrap_path="target/${target}/release/bwrap"
+          strip --strip-debug --strip-unneeded "${bwrap_path}"
+          digest="$(sha256sum "${bwrap_path}" | awk '{print $1}')"
+          echo "CODEX_BWRAP_SHA256=${digest}" >> "$GITHUB_ENV"
+
       - name: Build release binaries
         shell: bash
         run: |
           set -euo pipefail
+          STABLE_GIT_COMMIT="$(git rev-parse HEAD)"
+          export STABLE_GIT_COMMIT
           target="${{ matrix.target }}"
           if [[ "${target}" == *"-linux-"* ]]; then
             # Keep the hosted Linux runners under their memory ceiling during late release linking.
@@ -250,10 +264,17 @@ jobs:
           cp "${release_dir}/codex-code-mode-host" "${dest}/codex-code-mode-host"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
-          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" codex codex-code-mode-host
+          codex_binaries=(codex codex-code-mode-host)
+          if [[ "${{ matrix.target }}" == *"-linux-"* ]]; then
+            cp "${release_dir}/bwrap" "${dest}/bwrap"
+            codex_binaries+=(bwrap)
+          fi
+          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" "${codex_binaries[@]}"
           tar -C "${dest}" -czf "${dest}/codex-responses-api-proxy-${{ matrix.target }}.tar.gz" codex-responses-api-proxy
 
-          rm "${dest}/codex" "${dest}/codex-code-mode-host" "${dest}/codex-responses-api-proxy"
+          for binary in "${codex_binaries[@]}" codex-responses-api-proxy; do
+            unlink "${dest}/${binary}"
+          done
 
       - uses: actions/upload-artifact@v7
         with:
