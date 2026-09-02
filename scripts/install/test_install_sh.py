@@ -17,6 +17,42 @@ MISMATCH_VERSION = "0.145.0"
 
 
 class InstallShTest(unittest.TestCase):
+    def test_skip_config_installs_without_credentials_and_preserves_config(
+        self,
+    ) -> None:
+        for existing_config in (None, b'# Custom configuration\nmodel = "custom"\n'):
+            with self.subTest(existing_config=existing_config):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    codex_archive, rg_archive, metadata = create_internal_raw_release(
+                        root
+                    )
+                    config = root / "codex-home" / "config.toml"
+                    if existing_config is not None:
+                        config.parent.mkdir(parents=True)
+                        config.write_bytes(existing_config)
+
+                    result, _requests = run_installer_in(
+                        root,
+                        VERSION,
+                        metadata_json=metadata,
+                        internal_codex_archive_path=codex_archive,
+                        internal_rg_archive_path=rg_archive,
+                        repository="SDGLBL/codex",
+                        extra_args=("--skip-config",),
+                        install_credentials=False,
+                    )
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    for binary in ("codex", "codex-code-mode-host", "rg"):
+                        self.assertTrue(
+                            os.access(root / "install-bin" / binary, os.X_OK)
+                        )
+                    if existing_config is None:
+                        self.assertFalse(config.exists())
+                    else:
+                        self.assertEqual(config.read_bytes(), existing_config)
+
     def test_metadata_fetch_failure_is_not_reported_as_missing_assets(self) -> None:
         result, requests = run_installer(VERSION, metadata_failure=True)
 
@@ -562,6 +598,8 @@ def run_installer_in(
     force_macos: bool = False,
     use_mirror: bool | None = False,
     releases_mode: str = "",
+    extra_args: tuple[str, ...] = (),
+    install_credentials: bool = True,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     bin_dir = root / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -733,7 +771,9 @@ def run_installer_in(
         env["CODEX_INSTALLER_USE_RELEASES_OPENAI_COM"] = (
             "TRUE" if use_mirror else "false"
         )
-    if repository == "SDGLBL/codex":
+    env.pop("CODEX_INSTALL_AK", None)
+    env.pop("CODEX_INSTALL_AZURE_BASE_URL", None)
+    if repository == "SDGLBL/codex" and install_credentials:
         env.update(
             {
                 "CODEX_INSTALL_AK": "test-ak",
@@ -741,7 +781,7 @@ def run_installer_in(
             }
         )
     result = subprocess.run(
-        ["/bin/sh", str(INSTALL_SCRIPT)],
+        ["/bin/sh", str(INSTALL_SCRIPT), *extra_args],
         capture_output=True,
         check=False,
         env=env,

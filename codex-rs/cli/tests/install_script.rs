@@ -79,15 +79,21 @@ fn create_release_fixture_with_codex(
         "#!/bin/sh\necho code mode host smoke test\n",
     )?;
     make_executable(&code_mode_host_path)?;
-    run_command(
-        Command::new("tar")
-            .arg("-C")
-            .arg(native_stage.path())
-            .arg("-czf")
-            .arg(release_dir.join(native_asset_name))
-            .arg("codex")
-            .arg("codex-code-mode-host"),
-    )?;
+    let mut archive = Command::new("tar");
+    archive
+        .arg("-C")
+        .arg(native_stage.path())
+        .arg("-czf")
+        .arg(release_dir.join(native_asset_name))
+        .arg("codex")
+        .arg("codex-code-mode-host");
+    if platform.uname_s == "Linux" {
+        let bwrap_path = native_stage.path().join("bwrap");
+        fs::write(&bwrap_path, "#!/bin/sh\necho bundled sandbox smoke test\n")?;
+        make_executable(&bwrap_path)?;
+        archive.arg("bwrap");
+    }
+    run_command(&mut archive)?;
 
     let rg_stage = TempDir::new_in(root)?;
     let rg_path = rg_stage.path().join("rg");
@@ -387,6 +393,14 @@ fn install_script_selects_linux_x86_64_musl_asset_and_bootstraps_config() -> Res
     let install_dir = home.path().join(".local").join("bin");
     assert!(install_dir.join("codex").is_file());
     assert!(install_dir.join("rg").is_file());
+    let installed_codex = fs::canonicalize(install_dir.join("codex"))?;
+    let bwrap = installed_codex
+        .parent()
+        .context("installed binary directory")?
+        .join("bwrap");
+    let output = Command::new(bwrap).output()?;
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"bundled sandbox smoke test\n");
     assert!(home.path().join(".profile").is_file());
 
     let config = read_installed_config(home.path())?;

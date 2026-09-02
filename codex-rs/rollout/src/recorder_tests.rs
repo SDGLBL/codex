@@ -1015,6 +1015,7 @@ async fn resumed_paginated_rollout_continues_after_decimal_token_count() -> std:
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,

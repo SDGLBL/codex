@@ -10,6 +10,7 @@ RELEASE_BASE_URL="${CODEX_INSTALL_RELEASE_BASE_URL:-https://github.com/$REPOSITO
 LATEST_RELEASE_URL="${CODEX_INSTALL_LATEST_RELEASE_URL:-https://api.github.com/repos/$REPOSITORY/releases/latest}"
 LATEST_INSTALL_URL="${CODEX_INSTALL_LATEST_INSTALL_URL:-https://github.com/$REPOSITORY/releases/latest/download/install.sh}"
 NON_INTERACTIVE="${CODEX_NON_INTERACTIVE:-false}"
+SKIP_CONFIG="false"
 if [ "$REPOSITORY" = "openai/codex" ]; then
   DEFAULT_PREFER_RELEASES_OPENAI_COM="true"
 else
@@ -45,7 +46,6 @@ LOCK_STALE_AFTER_SECS=600
 path_action="already"
 path_profile=""
 conflict_manager=""
-conflict_path=""
 lock_kind=""
 tmp_dir=""
 
@@ -136,9 +136,15 @@ parse_args() {
         RELEASE="$2"
         shift
         ;;
+      --skip-config)
+        SKIP_CONFIG="true"
+        ;;
       --help | -h)
         cat <<EOF
-Usage: install.sh [VERSION] [--release VERSION]
+Usage: install.sh [VERSION] [--release VERSION] [--skip-config]
+
+Options:
+  --skip-config         Skip config.toml creation or overwrite and credential prompts.
 
 Environment:
   CODEX_RELEASE          Version to install; overridden by --release.
@@ -1046,7 +1052,6 @@ detect_conflicting_install() {
   fi
 
   conflict_manager="$manager"
-  conflict_path="$existing_path"
   step "Detected existing $manager-managed Codex at $existing_path"
   warn "Multiple managed Codex installs can be ambiguous because PATH order decides which one runs."
 }
@@ -1512,7 +1517,9 @@ update_current_link "$release_dir"
 update_visible_command "$release_dir"
 add_to_path
 verify_visible_command
-if [ "$REPOSITORY" != "openai/codex" ] ||
+if [ "$SKIP_CONFIG" = "true" ]; then
+  step "Skipping config.toml configuration (--skip-config)"
+elif [ "$REPOSITORY" != "openai/codex" ] ||
   [ -n "$INSTALL_AK" ] ||
   [ -n "$INSTALL_AZURE_BASE_URL" ]; then
   prompt_for_install_config
