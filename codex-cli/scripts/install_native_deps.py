@@ -21,7 +21,9 @@ from urllib.request import urlopen
 SCRIPT_DIR = Path(__file__).resolve().parent
 CODEX_CLI_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = CODEX_CLI_ROOT.parent
-DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
+DEFAULT_WORKFLOW_URL = (
+    "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
+)
 VENDOR_DIR_NAME = "vendor"
 RG_MANIFEST = REPO_ROOT / "scripts" / "codex_package" / "rg"
 LEGACY_RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
@@ -37,7 +39,9 @@ BINARY_TARGETS = (
 
 @dataclass(frozen=True)
 class BinaryComponent:
-    artifact_prefix: str  # matches the artifact filename prefix (e.g. codex-<target>.zst)
+    artifact_prefix: (
+        str  # matches the artifact filename prefix (e.g. codex-<target>.zst)
+    )
     dest_dir: str  # directory under vendor/<target>/ where the binary is installed
     binary_basename: str  # executable name inside dest_dir (before optional .exe)
     targets: tuple[str, ...] | None = None  # limit installation to specific targets
@@ -85,7 +89,9 @@ RG_TARGET_PLATFORM_PAIRS: list[tuple[str, str]] = [
     ("x86_64-pc-windows-msvc", "windows-x86_64"),
     ("aarch64-pc-windows-msvc", "windows-aarch64"),
 ]
-RG_TARGET_TO_PLATFORM = {target: platform for target, platform in RG_TARGET_PLATFORM_PAIRS}
+RG_TARGET_TO_PLATFORM = {
+    target: platform for target, platform in RG_TARGET_PLATFORM_PAIRS
+}
 DEFAULT_RG_TARGETS = [target for target, _ in RG_TARGET_PLATFORM_PAIRS]
 
 # urllib.request.urlopen() defaults to no timeout (can hang indefinitely), which is painful in CI.
@@ -179,13 +185,17 @@ def main() -> int:
     if not workflow_url:
         workflow_url = DEFAULT_WORKFLOW_URL
 
-    binary_components = [BINARY_COMPONENTS[name] for name in components if name in BINARY_COMPONENTS]
+    binary_components = [
+        BINARY_COMPONENTS[name] for name in components if name in BINARY_COMPONENTS
+    ]
     if binary_components:
         workflow_id = workflow_url.rstrip("/").split("/")[-1]
         print(f"Downloading native artifacts from workflow {workflow_id}...")
 
         with _gha_group(f"Download native artifacts from workflow {workflow_id}"):
-            with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
+            with tempfile.TemporaryDirectory(
+                prefix="codex-native-artifacts-"
+            ) as artifacts_dir_str:
                 artifacts_dir = Path(artifacts_dir_str)
                 _download_artifacts(workflow_id, artifacts_dir)
                 install_binary_components(
@@ -235,7 +245,9 @@ def fetch_rg(
 
         platform_info = platforms.get(platform_key)
         if platform_info is None:
-            raise RuntimeError(f"Platform '{platform_key}' not found in manifest {manifest_path}.")
+            raise RuntimeError(
+                f"Platform '{platform_key}' not found in manifest {manifest_path}."
+            )
 
         task_configs.append((target, platform_key, platform_info))
 
@@ -266,7 +278,9 @@ def fetch_rg(
                     title="ripgrep install failed",
                     message=f"target={target} error={exc!r}",
                 )
-                raise RuntimeError(f"Failed to install ripgrep for target {target}.") from exc
+                raise RuntimeError(
+                    f"Failed to install ripgrep for target {target}."
+                ) from exc
             print(f"  installed ripgrep for {target}")
 
     return [results[target] for target in targets]
@@ -334,7 +348,9 @@ def _install_single_binary(
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     binary_name = (
-        f"{component.binary_basename}.exe" if "windows" in target else component.binary_basename
+        f"{component.binary_basename}.exe"
+        if "windows" in target
+        else component.binary_basename
     )
     dest = dest_dir / binary_name
     dest.unlink(missing_ok=True)
@@ -359,7 +375,9 @@ def _fetch_single_rg(
 ) -> Path:
     providers = platform_info.get("providers", [])
     if not providers:
-        raise RuntimeError(f"No providers listed for platform '{platform_key}' in {manifest_path}.")
+        raise RuntimeError(
+            f"No providers listed for platform '{platform_key}' in {manifest_path}."
+        )
 
     url = providers[0]["url"]
     archive_format = platform_info.get("format", "zst")
@@ -415,7 +433,10 @@ def _download_file(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.unlink(missing_ok=True)
 
-    with urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECS) as response, open(dest, "wb") as out:
+    with (
+        urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECS) as response,
+        open(dest, "wb") as out,
+    ):
         shutil.copyfileobj(response, out)
 
 
@@ -437,7 +458,9 @@ def extract_archive(
 
     if archive_format == "tar.gz":
         if not archive_member:
-            raise RuntimeError("Missing 'path' for tar.gz archive in DotSlash manifest.")
+            raise RuntimeError(
+                "Missing 'path' for tar.gz archive in DotSlash manifest."
+            )
         with tarfile.open(archive_path, "r:gz") as tar:
             try:
                 member = tar.getmember(archive_member)
@@ -472,7 +495,9 @@ def _load_manifest(manifest_path: Path) -> dict:
     try:
         manifest = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid DotSlash manifest output from {manifest_path}.") from exc
+        raise RuntimeError(
+            f"Invalid DotSlash manifest output from {manifest_path}."
+        ) from exc
 
     if not isinstance(manifest, dict):
         raise RuntimeError(
