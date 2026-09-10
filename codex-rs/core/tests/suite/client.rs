@@ -3168,6 +3168,53 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         .expect("response item with an empty id should deserialize"),
     );
 
+    // Only known, unpaired Codex App text events need the compatibility view.
+    // Preserve unrelated outputs and multimodal payloads without inventing a
+    // call ID or silently dropping media.
+    let preserved_outputs = vec![
+        json!({
+            "type": "function_call_output",
+            "id": "fco_other_namespace",
+            "name": "automation_update",
+            "namespace": "other_app",
+            "output": "external context",
+        }),
+        json!({
+            "type": "function_call_output",
+            "id": "fco_unknown_tool",
+            "name": "unknown_tool",
+            "namespace": "codex_app",
+            "output": "unknown event",
+        }),
+        json!({
+            "type": "function_call_output",
+            "id": "fco_unscoped",
+            "name": "automation_update",
+            "output": "output without a namespace",
+        }),
+        json!({
+            "type": "function_call_output",
+            "id": "fco_multimodal",
+            "name": "automation_update",
+            "namespace": "codex_app",
+            "output": [
+                {"type": "input_text", "text": "keep the image"},
+                {"type": "input_image", "image_url": "data:image/png;base64,aW1hZ2U="},
+            ],
+        }),
+        json!({
+            "type": "function_call_output",
+            "id": "fco_empty_call_id",
+            "call_id": "",
+            "name": "automation_update",
+            "namespace": "codex_app",
+            "output": "invalid paired output",
+        }),
+    ];
+    prompt.input.extend(preserved_outputs.iter().map(|item| {
+        serde_json::from_value(item.clone()).expect("function-call output should deserialize")
+    }));
+
     let mut stream = client_session
         .stream(
             &prompt,
@@ -3194,7 +3241,7 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
 
     assert_eq!(body["store"], serde_json::Value::Bool(false));
     assert_eq!(body["stream"], serde_json::Value::Bool(true));
-    assert_eq!(body["input"].as_array().map(Vec::len), Some(10));
+    assert_eq!(body["input"].as_array().map(Vec::len), Some(15));
     assert_eq!(body["input"][0]["id"].as_str(), Some("rs_reasoning-id"));
     assert_eq!(body["input"][1]["id"].as_str(), Some("msg_message-id"));
     assert_eq!(body["input"][2]["id"].as_str(), Some("ws_web-search-id"));
@@ -3211,6 +3258,10 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
     );
     assert_eq!(body["input"][8].get("id"), None);
     assert_eq!(body["input"][9].get("id"), None);
+    assert_eq!(
+        &body["input"].as_array().expect("request input")[10..],
+        preserved_outputs.as_slice()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

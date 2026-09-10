@@ -118,8 +118,10 @@ async fn idle_response_items_include_pending_mailbox_in_first_request() -> anyho
     Ok(())
 }
 
+#[test_case("automation_update"; "scheduled task")]
+#[test_case("send_message_to_thread"; "task message")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn standalone_tool_output_starts_instruction_turn() -> anyhow::Result<()> {
+async fn standalone_tool_output_starts_instruction_turn(name: &str) -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
     let response = responses::mount_sse_once(
         &server,
@@ -130,7 +132,7 @@ async fn standalone_tool_output_starts_instruction_turn() -> anyhow::Result<()> 
 
     let expected_output = json!({
         "type": "function_call_output",
-        "name": "send_message_to_thread",
+        "name": name,
         "namespace": "codex_app",
         "output": "delegated work",
     });

@@ -160,6 +160,7 @@ mod skills;
 mod skills_extension;
 mod spawn_agent_description;
 mod sqlite_state;
+mod standalone_tool_outputs;
 mod step_settings;
 mod step_settings_snapshots;
 mod stream_error_allows_next_turn;

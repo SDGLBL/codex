@@ -122,6 +122,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
 use crate::context::BaseInstructionsFragment;
+use crate::context::CodexAppToolOutput;
 use crate::context::ContextualUserFragment;
 use crate::cyber_access_program;
 use crate::feedback_tags;
@@ -983,6 +984,32 @@ impl ModelClient {
         };
         if !is_openai {
             for item in &mut input {
+                // Desktop events have no preceding model call. Normalize the request
+                // copy here so HTTP, WebSocket, compaction, and replay all agree,
+                // while the original event remains intact in thread history.
+                if let ResponseItem::FunctionCallOutput {
+                    id,
+                    call_id: None,
+                    name: Some(name),
+                    namespace: Some(namespace),
+                    output,
+                    ..
+                } = item
+                    && namespace == "codex_app"
+                    && matches!(
+                        name.as_str(),
+                        "automation_update"
+                            | "create_thread"
+                            | "send_message_to_thread"
+                            | "fork_thread"
+                            | "handoff_thread"
+                    )
+                    && let Some(output) = output.text_content()
+                {
+                    let message_id = id.as_ref().map(|id| ResponseItemId::with_suffix("msg", id));
+                    *item = ContextualUserFragment::into(CodexAppToolOutput { name, output });
+                    item.set_id(message_id);
+                }
                 item.clear_internal_chat_message_metadata_passthrough();
                 if let ResponseItem::FunctionCall {
                     encrypted_function_args,
