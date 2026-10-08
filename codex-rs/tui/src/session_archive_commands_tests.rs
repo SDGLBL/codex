@@ -75,6 +75,7 @@ fn write_rollout(
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             timestamp: timestamp.to_string(),
             cwd: config.codex_home.join("project").to_path_buf(),
             originator: "codex".to_string(),
