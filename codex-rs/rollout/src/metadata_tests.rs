@@ -90,6 +90,7 @@ fn fork_cutoff_distinguishes_logical_parent_from_reverted_rollout() {
     ] {
         let meta = SessionMeta {
             id: thread_id,
+            wire_session_id: None,
             forked_from_id: parent,
             forked_from_ordinal_exclusive: cutoff,
             history_base: Some(HistoryPosition {

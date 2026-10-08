@@ -2706,6 +2706,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
             let session_meta = SessionMeta {
                 session_id: root_thread_id.into(),
                 id: child_thread_id,
+                wire_session_id: None,
                 parent_thread_id: Some(root_thread_id),
                 timestamp: timestamp.clone(),
                 cwd: app.config.cwd.to_path_buf(),
