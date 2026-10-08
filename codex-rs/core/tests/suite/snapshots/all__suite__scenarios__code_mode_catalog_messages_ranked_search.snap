@@ -15,14 +15,14 @@ Settings:
   stream: true
   text: {"verbosity":"low"}
   tool_choice: "auto"
-  tools (7; hash=40e072f613a5e3eb):
+  tools (7; hash=3d5526e9b6bbc309):
     - custom/exec: Catalog exec instructions. Default yield: 1234 ms. `image(imageUrlOrItem: string | { image_url: s...; hash=1b186fc5b7e14af3
     - function/wait: Catalog wait instructions: resume the yielded cell.; args=[cell_id, max_tokens, terminate, yield_time_ms]; hash=67bc0f04da3505b3
     - function/request_user_input: Request user input for one to three short questions and wait for the response. This tool is only ...; args=[questions]; hash=64a729b25c424fc6
     - function/request_user_input_async: Ask the user one or more questions during ongoing work. Use this tool only to request missing inf...; args=[questions]; hash=d6d74f33db330162
     - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
       - function/sleep
-    - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+    - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=6a00e6c46fd6535f
       - function/followup_task
       - function/interrupt_agent
       - function/list_agents

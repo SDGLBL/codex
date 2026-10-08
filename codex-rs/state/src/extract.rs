@@ -367,6 +367,7 @@ mod tests {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: None,
                 source,
                 ..Default::default()
             },

@@ -16,7 +16,7 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn; Before /compact) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
+00:additional_tools/developer (3; hash=a56570a1dff02f5d):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -24,7 +24,7 @@ Settings:
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=6a00e6c46fd6535f
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -164,7 +164,7 @@ Settings: unavailable (items only)
 ## Window 3 (after request 3: input diverged at item 00)
 Settings: same as window 1
 -- request 4 (turn; First turn after /compact) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
+00:additional_tools/developer (3; hash=a56570a1dff02f5d):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -172,7 +172,7 @@ Settings: same as window 1
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=6a00e6c46fd6535f
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents

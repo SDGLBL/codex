@@ -1437,6 +1437,7 @@ async fn reconstruct_history_restores_initial_window_from_session_meta() {
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             context_window: Some(SessionContextWindow {
                 window_id: initial_window_id.to_string(),
             }),
@@ -1468,6 +1469,7 @@ async fn reconstruct_history_prefers_compacted_window_over_session_meta() {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: None,
                 context_window: Some(SessionContextWindow {
                     window_id: initial_window_id.to_string(),
                 }),
@@ -1953,6 +1955,7 @@ async fn reconstruct_history_preserves_legacy_compaction_count_with_session_meta
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: None,
                 context_window: Some(SessionContextWindow {
                     window_id: initial_window_id.to_string(),
                 }),

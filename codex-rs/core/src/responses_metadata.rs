@@ -233,6 +233,7 @@ pub struct CodexResponsesMetadata {
     pub(crate) parent_response_id: Option<String>,
     pub(crate) installation_id: String,
     pub(crate) session_id: String,
+    pub(crate) wire_session_id: String,
     pub(crate) thread_id: String,
     pub(crate) agent_name: Option<String>,
     pub(crate) turn_id: Option<String>,
@@ -277,6 +278,7 @@ impl CodexResponsesMetadata {
         Self {
             parent_response_id: None,
             installation_id,
+            wire_session_id: session_id.clone(),
             session_id,
             thread_id,
             agent_name: None,

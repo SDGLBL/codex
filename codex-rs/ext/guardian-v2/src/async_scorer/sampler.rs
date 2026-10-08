@@ -243,6 +243,7 @@ impl LunaSampler {
             text: None,
             client_metadata: None,
             access_programs: None,
+            max_output_tokens: None,
         };
         execution::SamplingExecution {
             auth_owner_generation,
