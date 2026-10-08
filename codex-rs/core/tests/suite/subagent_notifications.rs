@@ -1628,6 +1628,14 @@ async fn resumed_forked_child_preserves_persisted_parent_wire_session_id() -> Re
     )
     .await;
 
+    let child_thread_id = ThreadId::from_string(&spawned_id)?;
+    test.thread_manager
+        .get_thread(child_thread_id)
+        .await?
+        .shutdown_and_wait()
+        .await?;
+    test.thread_manager.remove_thread(&child_thread_id).await;
+
     let resumed = test_codex()
         .with_home(test.home.clone())
         .with_config(|config| {

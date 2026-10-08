@@ -264,16 +264,18 @@ jobs:
           cp "${release_dir}/codex-code-mode-host" "${dest}/codex-code-mode-host"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
-          codex_binaries=(codex codex-code-mode-host)
+          printf '{"version":"%s","target":"%s","entrypoint":"bin/codex"}\n' \
+            "${{ needs.meta.outputs.version }}" "${{ matrix.target }}" > "${dest}/codex-package.json"
+          codex_archive_files=(codex codex-code-mode-host codex-package.json)
           if [[ "${{ matrix.target }}" == *"-linux-"* ]]; then
             cp "${release_dir}/bwrap" "${dest}/bwrap"
-            codex_binaries+=(bwrap)
+            codex_archive_files+=(bwrap)
           fi
-          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" "${codex_binaries[@]}"
+          tar -C "${dest}" -czf "${dest}/codex-${{ matrix.target }}.tar.gz" "${codex_archive_files[@]}"
           tar -C "${dest}" -czf "${dest}/codex-responses-api-proxy-${{ matrix.target }}.tar.gz" codex-responses-api-proxy
 
-          for binary in "${codex_binaries[@]}" codex-responses-api-proxy; do
-            unlink "${dest}/${binary}"
+          for archive_file in "${codex_archive_files[@]}" codex-responses-api-proxy; do
+            unlink "${dest}/${archive_file}"
           done
 
       - uses: actions/upload-artifact@v7
