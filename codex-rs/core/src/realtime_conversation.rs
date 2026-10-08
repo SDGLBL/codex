@@ -1644,8 +1644,17 @@ async fn prepare_realtime_start(
         }
     }
     .unwrap_or_default();
+    // ChatGPT backend calls share the upstream session identity. API-key calls retain
+    // their persisted wire identity independently of the realtime call identity.
+    let transport_session_id = if provider.supports_codex_backend_routes()
+        && auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth)
+    {
+        sess.session_id().to_string()
+    } else {
+        sess.wire_session_id().await.to_string()
+    };
     extra_headers.extend(build_realtime_thread_headers(
-        sess.session_id().to_string(),
+        transport_session_id,
         sess.thread_id().to_string(),
         sess.thread_config_snapshot().await.thread_source,
     ));
@@ -1795,10 +1804,6 @@ pub(crate) async fn build_realtime_session_config(
         ConfiguredRealtimeVoice::Use => config.realtime.voice,
         ConfiguredRealtimeVoice::Ignore => None,
     };
-    let requested_session_id = match params.realtime_session_id.clone() {
-        Some(session_id) => session_id,
-        None => sess.wire_session_id().await.to_string(),
-    };
     let voice = params
         .voice
         .or(config_voice)
@@ -1809,7 +1814,12 @@ pub(crate) async fn build_realtime_session_config(
         initial_items: params.initial_items.clone(),
         delegation_ack_filler: params.delegation_ack_filler,
         model,
-        session_id: Some(requested_session_id),
+        session_id: Some(
+            params
+                .realtime_session_id
+                .clone()
+                .unwrap_or_else(|| sess.thread_id.to_string()),
+        ),
         event_parser,
         session_mode,
         output_modality: params.output_modality,
