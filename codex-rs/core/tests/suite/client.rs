@@ -620,6 +620,7 @@ async fn synthetic_call_output_id_is_stable_across_resumes() -> anyhow::Result<(
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: None,
                     parent_thread_id: None,
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
@@ -1137,6 +1138,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: None,
                     parent_thread_id: None,
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
@@ -1279,6 +1281,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    wire_session_id: None,
                     parent_thread_id: None,
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),

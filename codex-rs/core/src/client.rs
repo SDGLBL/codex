@@ -601,6 +601,14 @@ impl ModelClient {
     // ChatGPT derives cache affinity from the Responses session-id header. Keep the
     // actual session identity in turn metadata, hooks, and history/notes requests.
     fn responses_session_id(&self, metadata: &CodexResponsesMetadata) -> String {
+        let auth = self
+            .auth_manager()
+            .and_then(|manager| manager.auth_cached());
+        if !self.uses_codex_backend(auth.as_ref())
+            || !self.state.provider.info().supports_codex_backend_routes()
+        {
+            return metadata.wire_session_id.clone();
+        }
         if self.state.session_source.is_non_root_agent() {
             metadata.session_id.clone()
         } else {

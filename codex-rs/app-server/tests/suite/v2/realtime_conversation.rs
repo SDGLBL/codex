@@ -4020,6 +4020,7 @@ async fn realtime_starts_on_forked_and_resumed_threads(
     let config = legacy_flag.map(|enabled| {
         HashMap::from([("features.realtime_conversation".to_string(), json!(enabled))])
     });
+    let wire_session_id = harness.thread_id.clone();
     let fork_id = harness
         .mcp
         .send_thread_fork_request(ThreadForkParams {
@@ -4066,6 +4067,22 @@ async fn realtime_starts_on_forked_and_resumed_threads(
                 sdp: "v=answer\r\n".to_string(),
             },
         }
+    );
+    let call_request = harness.call_capture.single_request();
+    let headers = &call_request.headers;
+    assert_eq!(
+        (
+            headers["session-id"].to_str()?,
+            headers["thread-id"].to_str()?,
+            headers["x-session-id"].to_str()?,
+            serde_json::from_str::<Value>(headers["extra"].to_str()?)?,
+        ),
+        (
+            wire_session_id.as_str(),
+            harness.thread_id.as_str(),
+            harness.thread_id.as_str(),
+            json!({ "session_id": wire_session_id }),
+        )
     );
     assert_v1_session_update(&harness.sideband_outbound_request(/*request_index*/ 0).await)?;
     harness.shutdown().await;

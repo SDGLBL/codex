@@ -190,6 +190,51 @@ class InstallShTest(unittest.TestCase):
             self.assertTrue(os.access(install_bin / "codex-code-mode-host", os.X_OK))
             self.assertTrue(os.access(install_bin / "rg", os.X_OK))
 
+    def test_internal_raw_install_produces_a_complete_daemon_source_package(
+        self,
+    ) -> None:
+        manifest = {
+            "version": VERSION,
+            "target": "x86_64-unknown-linux-musl",
+            "entrypoint": "bin/codex",
+        }
+        for archive_manifest in (None, {**manifest, "source": "internal-release"}):
+            with self.subTest(archive_manifest=archive_manifest):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    codex_archive, rg_archive, metadata = create_internal_raw_release(
+                        root, package_manifest=archive_manifest
+                    )
+                    result, _ = run_installer_in(
+                        root,
+                        VERSION,
+                        metadata_json=metadata,
+                        internal_codex_archive_path=codex_archive,
+                        internal_rg_archive_path=rg_archive,
+                        repository="SDGLBL/codex",
+                        extra_args=("--skip-config",),
+                        install_credentials=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    package = (
+                        root / "codex-home/packages/standalone/current"
+                    ).resolve()
+                    self.assertEqual(
+                        json.loads((package / "codex-package.json").read_text()),
+                        archive_manifest or manifest,
+                    )
+                    for relative in (
+                        "bin/codex",
+                        "bin/codex-code-mode-host",
+                        "codex-path/rg",
+                        "codex-resources/bwrap",
+                    ):
+                        self.assertTrue(os.access(package / relative, os.X_OK))
+                    self.assertEqual(
+                        (package / "bin/bwrap").read_bytes(),
+                        (package / "codex-resources/bwrap").read_bytes(),
+                    )
+
     def test_releases_latest_installs_verified_package_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1092,7 +1137,9 @@ def create_legacy_release(root: Path) -> tuple[Path, str]:
     return archive_path, metadata_json
 
 
-def create_internal_raw_release(root: Path) -> tuple[Path, Path, str]:
+def create_internal_raw_release(
+    root: Path, *, package_manifest: dict[str, str] | None = None
+) -> tuple[Path, Path, str]:
     target = "x86_64-unknown-linux-musl"
     codex_dir = root / "internal-codex"
     codex_dir.mkdir()
@@ -1101,6 +1148,9 @@ def create_internal_raw_release(root: Path) -> tuple[Path, Path, str]:
         f"#!/bin/sh\nprintf 'codex-cli {VERSION}\\n'\n",
     )
     write_executable(codex_dir / "codex-code-mode-host", "#!/bin/sh\nexit 0\n")
+    write_executable(codex_dir / "bwrap", "#!/bin/sh\nexit 0\n")
+    if package_manifest is not None:
+        (codex_dir / "codex-package.json").write_text(json.dumps(package_manifest))
     codex_asset = f"codex-{target}.tar.gz"
     codex_archive_path = root / codex_asset
     with tarfile.open(codex_archive_path, "w:gz") as archive:

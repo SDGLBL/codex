@@ -1420,6 +1420,75 @@ fn internal_session_prompt_cache_key_is_scoped_to_parent_thread() {
 }
 
 #[test]
+fn custom_provider_uses_persisted_wire_session_with_inherited_cache() {
+    let mut client = test_model_client(SessionSource::Cli);
+    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    let mut metadata = test_responses_metadata_for_client(
+        &client,
+        Some("turn-123"),
+        "window-1".to_string(),
+        /*parent_thread_id*/ None,
+        TestCodexResponsesRequestKind::Turn,
+    );
+    metadata.wire_session_id = "persisted-wire-session".to_string();
+
+    assert_eq!(
+        (
+            client.responses_session_id(&metadata),
+            client.prompt_cache_key(&metadata)
+        ),
+        (
+            "persisted-wire-session".to_string(),
+            "parent-cache".to_string()
+        ),
+    );
+}
+
+#[test_case::test_case(None; "default_endpoint")]
+#[test_case::test_case(Some("https://api.openai.com/v1".to_string()); "explicit_endpoint")]
+fn openai_api_key_provider_uses_persisted_wire_session(base_url: Option<String>) {
+    let mut client = test_model_client(SessionSource::Cli);
+    Arc::get_mut(&mut client.state)
+        .expect("test client should have unique session state")
+        .provider = create_model_provider(
+        ModelProviderInfo::create_openai_provider(base_url),
+        Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+            "test-api-key",
+        ))),
+    );
+    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    let mut metadata = test_responses_metadata_for_client(
+        &client,
+        Some("turn-123"),
+        "window-1".to_string(),
+        /*parent_thread_id*/ None,
+        TestCodexResponsesRequestKind::Turn,
+    );
+    metadata.wire_session_id = "persisted-wire-session".to_string();
+
+    assert_eq!(
+        client.responses_session_id(&metadata),
+        "persisted-wire-session"
+    );
+}
+
+#[test]
+fn chatgpt_provider_keeps_inherited_cache_routing_with_separate_wire_session() {
+    let (mut client, _) = model_client_with_counting_attestation(/*include_attestation*/ true);
+    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    let mut metadata = test_responses_metadata_for_client(
+        &client,
+        Some("turn-123"),
+        "window-1".to_string(),
+        /*parent_thread_id*/ None,
+        TestCodexResponsesRequestKind::Turn,
+    );
+    metadata.wire_session_id = "persisted-wire-session".to_string();
+
+    assert_eq!(client.responses_session_id(&metadata), "parent-cache");
+}
+
+#[test]
 fn build_subagent_headers_sets_internal_memory_consolidation_label() {
     let client = test_model_client(SessionSource::Internal(
         InternalSessionSource::MemoryConsolidation,
@@ -1920,6 +1989,7 @@ fn model_client_with_counting_attestation(
         /*model_verbosity*/ None,
         /*content_item_kinds_enabled*/ true,
         /*reasoning_effort_override_enabled*/ false,
+        /*model_max_output_tokens*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
