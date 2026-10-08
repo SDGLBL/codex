@@ -192,6 +192,7 @@ pub(crate) fn write_session_rollout(
     let session_meta = codex_protocol::protocol::SessionMeta {
         session_id: thread_id.into(),
         id: thread_id,
+        wire_session_id: None,
         timestamp: meta_rfc3339.to_string(),
         cwd: cwd.to_path_buf(),
         originator: "codex".to_string(),
