@@ -491,6 +491,7 @@ mod tests {
             creator_account_id: None,
             session_id: thread_id.into(),
             thread_id,
+            wire_session_id: thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -914,6 +915,7 @@ mod tests {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
+                wire_session_id: None,
                 timestamp: "2025-01-03T12:00:00Z".to_string(),
                 source: SessionSource::Exec,
                 originator: "test_originator".to_string(),

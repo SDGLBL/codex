@@ -1325,6 +1325,17 @@ install_internal_raw_release() {
   mkdir -p "$stage_release/bin" "$stage_release/codex-path"
   tar -xzf "$codex_archive_path" -C "$stage_release/bin"
   tar -xzf "$rg_archive_path" -C "$stage_release/codex-path"
+  if [ -f "$stage_release/bin/codex-package.json" ]; then
+    mv "$stage_release/bin/codex-package.json" "$stage_release/codex-package.json"
+  else
+    printf '{"version":"%s","target":"%s","entrypoint":"bin/codex"}\n' \
+      "$resolved_version" "$vendor_target" > "$stage_release/codex-package.json"
+  fi
+  if [ -f "$stage_release/bin/bwrap" ]; then
+    mkdir -p "$stage_release/codex-resources"
+    cp "$stage_release/bin/bwrap" "$stage_release/codex-resources/bwrap"
+    chmod 0755 "$stage_release/bin/bwrap" "$stage_release/codex-resources/bwrap"
+  fi
   chmod 0755 \
     "$stage_release/bin/codex" \
     "$stage_release/bin/codex-code-mode-host" \

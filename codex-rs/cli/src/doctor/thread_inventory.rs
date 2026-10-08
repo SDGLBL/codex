@@ -1337,6 +1337,7 @@ mod tests {
                         meta: codex_protocol::protocol::SessionMeta {
                             session_id: parsed_thread_id.into(),
                             id: parsed_thread_id,
+                            wire_session_id: None,
                             timestamp: timestamp.to_string(),
                             cwd: self.codex_home.path().to_path_buf(),
                             originator: "test".to_string(),
