@@ -102,13 +102,13 @@ git push -u upstream candidate/queue/rust-vX.Y.Z
 发布版本：
 
 ```bash
-gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z -f publish=true
+gh workflow run internal-rust-release.yml -R SDGLBL/codex --ref candidate/queue/rust-vX.Y.Z -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z -f publish=true
 ```
 
 仅进行空跑捆绑：
 
 ```bash
-gh workflow run internal-rust-release.yml -R SDGLBL/codex -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z-dryrun -f publish=false
+gh workflow run internal-rust-release.yml -R SDGLBL/codex --ref candidate/queue/rust-vX.Y.Z -f upstream_tag=rust-vX.Y.Z -f release_ref=candidate/queue/rust-vX.Y.Z -f internal_tag=internal-rust-vX.Y.Z-dryrun -f publish=false
 ```
 
 ## 7. 验证输出
