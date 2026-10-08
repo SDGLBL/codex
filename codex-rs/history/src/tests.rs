@@ -1429,6 +1429,7 @@ fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             multi_agent_version: Some(MultiAgentVersion::V2),
             ..Default::default()
         },
@@ -1438,6 +1439,7 @@ fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            wire_session_id: None,
             multi_agent_version: None,
             ..Default::default()
         },

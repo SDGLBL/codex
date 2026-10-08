@@ -699,6 +699,7 @@ impl Session {
             window_id,
             request_kind,
         );
+        responses_metadata.wire_session_id = self.wire_session_id().await.to_string();
         ExecutionMetadata::from_settings(&step_context.settings).apply_to(&mut responses_metadata);
         responses_metadata.request_country = step_context.settings.request_country().clone();
         responses_metadata.guardian_recorded_items = self.parent_observer_event_tx.get().is_some();
@@ -745,9 +746,10 @@ impl Session {
             compaction_metadata,
             self.current_window().await,
         )
+        .await
     }
 
-    pub(crate) fn compaction_responses_metadata_for_window(
+    pub(crate) async fn compaction_responses_metadata_for_window(
         &self,
         step_context: &StepContext,
         compaction_metadata: CompactionTurnMetadata,
@@ -760,6 +762,7 @@ impl Session {
             CodexResponsesRequestKind::Compaction(compaction_metadata),
         );
         responses_metadata.request_country = step_context.settings.request_country().clone();
+        responses_metadata.wire_session_id = self.wire_session_id().await.to_string();
         self.with_window_and_fork_metadata(
             turn_context,
             responses_metadata,
@@ -799,7 +802,7 @@ impl Session {
         state
             .session_configuration
             .wire_session_id
-            .unwrap_or(self.conversation_id)
+            .unwrap_or(self.thread_id)
     }
 
     #[instrument(name = "session_init", level = "info", skip_all)]

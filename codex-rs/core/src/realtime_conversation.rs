@@ -1917,6 +1917,8 @@ async fn prepare_realtime_start(
         }
     }
     .unwrap_or_default();
+    // ChatGPT backend calls share the upstream session identity. API-key calls retain
+    // their persisted wire identity independently of the realtime call identity.
     let transport_session_id = if provider.supports_codex_backend_routes()
         && auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth)
     {
