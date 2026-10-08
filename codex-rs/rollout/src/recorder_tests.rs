@@ -810,6 +810,7 @@ async fn referenced_paginated_rollout_starts_at_history_cutoff_and_resumes() -> 
         &config,
         RolloutRecorderParams::new(
             ThreadId::new(),
+            /*wire_session_id*/ history_base.thread_id,
             Some(history_base.thread_id),
             /*parent_thread_id*/ None,
             SessionSource::Exec,
@@ -878,6 +879,7 @@ async fn rollout_id_preserves_session_meta_thread_id() -> std::io::Result<()> {
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            /*wire_session_id*/ thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,
@@ -920,6 +922,7 @@ async fn recorder_omits_ordinals_from_legacy_rollouts() -> std::io::Result<()> {
         &config,
         RolloutRecorderParams::new(
             ThreadId::new(),
+            /*wire_session_id*/ ThreadId::new(),
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,
@@ -1095,6 +1098,7 @@ async fn resumed_paginated_rollout_continues_after_decimal_token_count() -> std:
         &config,
         RolloutRecorderParams::new(
             thread_id,
+            /*wire_session_id*/ thread_id,
             /*forked_from_id*/ None,
             /*parent_thread_id*/ None,
             SessionSource::Exec,

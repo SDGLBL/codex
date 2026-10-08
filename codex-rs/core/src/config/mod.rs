@@ -4466,9 +4466,7 @@ impl Config {
                 .model_post_turn_compact_threshold_percent
                 .unwrap_or_default(),
             async_compaction_threshold_percent,
-            model_max_output_tokens: config_profile
-                .model_max_output_tokens
-                .or(cfg.model_max_output_tokens),
+            model_max_output_tokens: cfg.model_max_output_tokens,
             model_provider_id,
             model_provider,
             cwd: resolved_cwd,

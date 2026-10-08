@@ -4505,6 +4505,7 @@ async fn set_rate_limits_retains_previous_credits() {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4628,6 +4629,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4929,6 +4931,7 @@ async fn open_thread_persistence(session: &mut Session) -> PathBuf {
             creator_account_id: None,
             session_id: session.session_id(),
             thread_id: session.thread_id,
+            wire_session_id: session.thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -5252,6 +5255,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -6703,6 +6707,36 @@ pub(crate) async fn build_world_state_from_turn_context(
 }
 
 #[tokio::test]
+async fn captured_compaction_window_preserves_wire_session_identity() {
+    let (session, turn_context) = make_session_and_context().await;
+    let wire_session_id = ThreadId::new();
+    session
+        .state
+        .lock()
+        .await
+        .session_configuration
+        .wire_session_id = Some(wire_session_id);
+    let context_window_id = uuid::Uuid::new_v4();
+    let metadata = session
+        .compaction_responses_metadata_for_window(
+            &turn_context,
+            CompactionTurnMetadata::new(
+                CompactionTrigger::Auto,
+                CompactionReason::ContextLimit,
+                CompactionImplementation::Responses,
+                CompactionPhase::MidTurn,
+            ),
+            ("captured-window".to_string(), 7, context_window_id),
+        )
+        .await;
+
+    assert_eq!(metadata.wire_session_id, wire_session_id.to_string());
+    assert_eq!(metadata.window_id, "captured-window");
+    assert_eq!(metadata.window_number, Some(7));
+    assert_eq!(metadata.context_window_id, Some(context_window_id));
+}
+
+#[tokio::test]
 async fn response_metadata_builders_capture_fresh_mcp_attribution() {
     let (mut session, turn_context) = make_session_and_context().await;
     session.services.executed_tool_calls =
@@ -6826,6 +6860,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -7147,6 +7182,7 @@ async fn make_session_with_config_and_rx(
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -7283,6 +7319,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -7457,6 +7494,7 @@ async fn resumed_copied_fork_ignores_source_history_base() {
         RolloutItem::SessionMeta(Box::new(SessionMetaLine {
             meta: SessionMeta {
                 id: parent_thread_id,
+                wire_session_id: None,
                 session_id: SessionId::from(parent_thread_id),
                 forked_from_id: Some(ancestor_thread_id),
                 history_base: Some(HistoryPosition {
@@ -8671,6 +8709,7 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
             creator_account_id: None,
             session_id: session.session_id(),
             thread_id: session.thread_id,
+            wire_session_id: session.thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -8791,6 +8830,7 @@ async fn submission_loop_channel_close_runs_full_thread_teardown() {
             creator_account_id: None,
             session_id: session.session_id(),
             thread_id: session.thread_id,
+            wire_session_id: session.thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
@@ -9101,6 +9141,7 @@ where
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        wire_session_id: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -11725,6 +11766,7 @@ async fn attach_in_memory_thread_store(
             creator_account_id: None,
             session_id: session.session_id(),
             thread_id: session.thread_id,
+            wire_session_id: session.thread_id,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,
