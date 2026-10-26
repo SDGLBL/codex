@@ -113,13 +113,13 @@ jobs:
           fi
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
 
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
         with:
           targets: ${{ matrix.target }}
 
       - name: Ensure Rust target is installed
         shell: bash
-        run: rustup target add "${{ matrix.target }}" --toolchain 1.95.0
+        run: rustup target add "${{ matrix.target }}" --toolchain 1.99.1
 
       - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
         name: Use hermetic Cargo home (musl)
