@@ -1522,7 +1522,7 @@ fn internal_session_prompt_cache_key_is_scoped_to_parent_thread() {
 #[test]
 fn custom_provider_uses_persisted_wire_session_with_inherited_cache() {
     let mut client = test_model_client(SessionSource::Cli);
-    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    client.session_id_override = Some("parent-cache".to_string());
     let mut metadata = test_responses_metadata_for_client(
         &client,
         Some("turn-123"),
@@ -1539,7 +1539,7 @@ fn custom_provider_uses_persisted_wire_session_with_inherited_cache() {
         ),
         (
             "persisted-wire-session".to_string(),
-            "parent-cache".to_string()
+            Some("parent-cache".to_string())
         ),
     );
 }
@@ -1556,7 +1556,7 @@ fn openai_api_key_provider_uses_persisted_wire_session(base_url: Option<String>)
             "test-api-key",
         ))),
     );
-    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    client.session_id_override = Some("parent-cache".to_string());
     let mut metadata = test_responses_metadata_for_client(
         &client,
         Some("turn-123"),
@@ -1575,7 +1575,7 @@ fn openai_api_key_provider_uses_persisted_wire_session(base_url: Option<String>)
 #[test]
 fn chatgpt_provider_keeps_inherited_cache_routing_with_separate_wire_session() {
     let (mut client, _) = model_client_with_counting_attestation(/*include_attestation*/ true);
-    client.prompt_cache_key_override = Some("parent-cache".to_string());
+    client.session_id_override = Some("parent-cache".to_string());
     let mut metadata = test_responses_metadata_for_client(
         &client,
         Some("turn-123"),
