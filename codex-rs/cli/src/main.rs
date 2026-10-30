@@ -80,7 +80,6 @@ mod state_db_recovery;
 #[cfg(not(windows))]
 mod wsl_paths;
 
-
 use crate::mcp_cmd::McpCli;
 use crate::plugin_cmd::PluginCli;
 use crate::plugin_cmd::PluginSubcommand;

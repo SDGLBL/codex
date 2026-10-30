@@ -2567,7 +2567,8 @@ impl ThreadManagerState {
             (Arc::clone(&self.extensions), Arc::clone(&self.mcp_manager))
         };
         let tracked_session_source = session_source.clone();
-        let inherited_wire_session_id = if startup_context.multi_agent_version == Some(MultiAgentVersion::V2)
+        let inherited_wire_session_id = if startup_context.multi_agent_version
+            == Some(MultiAgentVersion::V2)
             && matches!(
                 &initial_history,
                 InitialHistory::New | InitialHistory::Cleared
