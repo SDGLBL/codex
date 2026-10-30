@@ -240,9 +240,9 @@ jobs:
             export CARGO_PROFILE_RELEASE_LTO=false
             export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
             cargo build --locked --target "${target}" --release --jobs 1 --bin codex-responses-api-proxy
-            cargo build --locked --target "${target}" --release --jobs 1 --bin codex --bin codex-code-mode-host
+            cargo build --locked --target "${target}" --release --jobs 1 --bin codex --bin codex-code-mode-host --bin codex-exec-server
           else
-            cargo build --locked --target "${target}" --release --bin codex --bin codex-code-mode-host --bin codex-responses-api-proxy
+            cargo build --locked --target "${target}" --release --bin codex --bin codex-code-mode-host --bin codex-exec-server --bin codex-responses-api-proxy
           fi
 
       - name: Stage internal release assets
@@ -258,15 +258,16 @@ jobs:
             --artifact-name "${{ matrix.target }}" \
             --release-dir "${release_dir}" \
             --archive-dir "${dest}" \
-            --binaries "codex codex-code-mode-host codex-responses-api-proxy"
+            --binaries "codex codex-code-mode-host codex-exec-server codex-responses-api-proxy"
 
           cp "${release_dir}/codex" "${dest}/codex"
           cp "${release_dir}/codex-code-mode-host" "${dest}/codex-code-mode-host"
+          cp "${release_dir}/codex-exec-server" "${dest}/codex-exec-server"
           cp "${release_dir}/codex-responses-api-proxy" "${dest}/codex-responses-api-proxy"
 
-          printf '{"version":"%s","target":"%s","entrypoint":"bin/codex"}\n' \
+          printf '{"version":"%s","target":"%s","entrypoint":"bin/codex","execServer":"bin/codex-exec-server"}\n' \
             "${{ needs.meta.outputs.version }}" "${{ matrix.target }}" > "${dest}/codex-package.json"
-          codex_archive_files=(codex codex-code-mode-host codex-package.json)
+          codex_archive_files=(codex codex-code-mode-host codex-exec-server codex-package.json)
           if [[ "${{ matrix.target }}" == *"-linux-"* ]]; then
             cp "${release_dir}/bwrap" "${dest}/bwrap"
             codex_archive_files+=(bwrap)
