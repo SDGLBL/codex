@@ -79,6 +79,7 @@ jobs:
       run:
         working-directory: codex-rs
     env:
+      RUSTUP_TOOLCHAIN: 1.99.1
       # macOS release packages archive packed dSYM bundles before stripping.
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: ${{ contains(matrix.target, 'apple-darwin') && 'packed' || 'off' }}
     strategy:
