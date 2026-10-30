@@ -202,7 +202,11 @@ class InstallShTest(unittest.TestCase):
             "target": "x86_64-unknown-linux-musl",
             "entrypoint": "bin/codex",
         }
-        for archive_manifest in (None, {**manifest, "source": "internal-release"}):
+        for archive_manifest in (
+            None,
+            {**manifest, "source": "internal-release"},
+            {**manifest, "execServer": "bin/codex-exec-server"},
+        ):
             with self.subTest(archive_manifest=archive_manifest):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     root = Path(temp_dir)
@@ -234,6 +238,28 @@ class InstallShTest(unittest.TestCase):
                         "codex-resources/bwrap",
                     ):
                         self.assertTrue(os.access(package / relative, os.X_OK))
+                    if archive_manifest and "execServer" in archive_manifest:
+                        executor = root / "install-bin/codex-exec-server"
+                        self.assertTrue(os.access(executor, os.X_OK))
+                        self.assertEqual(
+                            subprocess.run([str(executor)], check=False).returncode, 0
+                        )
+                        (package / "bin/codex-exec-server").unlink()
+                        reinstall, requests = run_installer_in(
+                            root,
+                            VERSION,
+                            metadata_json=metadata,
+                            internal_codex_archive_path=codex_archive,
+                            internal_rg_archive_path=rg_archive,
+                            repository="SDGLBL/codex",
+                            extra_args=("--skip-config",),
+                            install_credentials=False,
+                        )
+                        self.assertEqual(reinstall.returncode, 0, reinstall.stderr)
+                        self.assertTrue(os.access(executor, os.X_OK))
+                        self.assertTrue(
+                            any(url.endswith(codex_archive.name) for url in requests)
+                        )
                     self.assertEqual(
                         (package / "bin/bwrap").read_bytes(),
                         (package / "codex-resources/bwrap").read_bytes(),
@@ -1445,6 +1471,10 @@ def create_internal_raw_release(
     write_executable(codex_dir / "bwrap", "#!/bin/sh\nexit 0\n")
     if package_manifest is not None:
         (codex_dir / "codex-package.json").write_text(json.dumps(package_manifest))
+        if "execServer" in package_manifest:
+            executor = codex_dir / "codex-exec-server"
+            executor.write_text("#!/bin/sh\nexit 0\n")
+            executor.chmod(0o644)
     codex_asset = f"codex-{target}.tar.gz"
     codex_archive_path = root / codex_asset
     with tarfile.open(codex_archive_path, "w:gz") as archive:

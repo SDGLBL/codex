@@ -650,6 +650,7 @@ async fn recorder_preserves_additional_tools_in_both_history_modes() -> std::io:
             &config,
             RolloutRecorderParams::new(
                 thread_id,
+                /*wire_session_id*/ thread_id,
                 /*forked_from_id*/ None,
                 /*parent_thread_id*/ None,
                 SessionSource::Exec,
