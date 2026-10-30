@@ -31,6 +31,7 @@ fi
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/codex"
 CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
+EXEC_SERVER_BIN_PATH="$BIN_DIR/codex-exec-server"
 RG_BIN_PATH="$BIN_DIR/rg"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 INSTALL_AK="${CODEX_INSTALL_AK:-}"
@@ -1122,6 +1123,7 @@ reuse_unmanaged_internal_install_dir() {
   BIN_DIR="$existing_dir"
   BIN_PATH="$BIN_DIR/codex"
   CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
+  EXEC_SERVER_BIN_PATH="$BIN_DIR/codex-exec-server"
   RG_BIN_PATH="$BIN_DIR/rg"
 }
 
@@ -1340,6 +1342,9 @@ install_internal_raw_release() {
     "$stage_release/bin/codex" \
     "$stage_release/bin/codex-code-mode-host" \
     "$stage_release/codex-path/rg"
+  if [ -f "$stage_release/bin/codex-exec-server" ]; then
+    chmod 0755 "$stage_release/bin/codex-exec-server"
+  fi
   ln -sf "bin/codex" "$stage_release/codex"
 
   if [ -e "$release_dir" ] || [ -L "$release_dir" ]; then
@@ -1366,10 +1371,6 @@ release_dir_is_complete() {
         [ -x "$release_dir/codex" ] &&
         [ -x "$release_dir/codex-path/rg" ] ||
         return 1
-      # Older canonical packages do not advertise or contain the executor.
-      if grep -Eq '"execServer"[[:space:]]*:' "$release_dir/codex-package.json"; then
-        [ -x "$release_dir/bin/codex-exec-server" ] || return 1
-      fi
       ;;
     legacy-platform-npm)
       [ -x "$release_dir/codex" ] &&
@@ -1387,6 +1388,12 @@ release_dir_is_complete() {
       return 1
       ;;
   esac
+
+  # The manifest advertises the standalone executor in packages that include it.
+  if [ -f "$release_dir/codex-package.json" ] &&
+    grep -Eq '"execServer"[[:space:]]*:' "$release_dir/codex-package.json"; then
+    [ -x "$release_dir/bin/codex-exec-server" ] || return 1
+  fi
 
   case "$layout:$expected_target" in
     package:*linux* | legacy-platform-npm:*linux*)
@@ -1436,6 +1443,13 @@ update_visible_command() {
   elif [ "$(readlink "$CODE_MODE_HOST_BIN_PATH" 2>/dev/null || true)" = \
     "$CURRENT_LINK/bin/codex-code-mode-host" ]; then
     rm -f "$CODE_MODE_HOST_BIN_PATH"
+  fi
+
+  if [ -x "$release_dir/bin/codex-exec-server" ]; then
+    replace_path_with_symlink "$EXEC_SERVER_BIN_PATH" "$CURRENT_LINK/bin/codex-exec-server" "$tmp_link"
+  elif [ "$(readlink "$EXEC_SERVER_BIN_PATH" 2>/dev/null || true)" = \
+    "$CURRENT_LINK/bin/codex-exec-server" ]; then
+    rm -f "$EXEC_SERVER_BIN_PATH"
   fi
 
   if [ "$install_layout" = "internal-raw" ]; then
