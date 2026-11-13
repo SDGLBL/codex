@@ -1197,23 +1197,6 @@ impl ContextManager {
             .map(|index| index + 1);
     }
 
-    /// Walk backward from a rollback cut and trim contiguous pre-turn context-update items.
-    ///
-    /// Returns the adjusted cut index after removing contextual developer/user items immediately
-    /// above the rolled-back turn boundary.
-    ///
-    /// `first_instruction_turn_idx` is the earliest rollback-eligible instruction-turn boundary
-    /// in `snapshot`; the trim walk never crosses it so any session-prefix items that predate the
-    /// first real turn survive rollback.
-    ///
-    /// `cut_idx` is the tentative slice boundary after dropping the requested number of
-    /// instruction turns, before stripping contextual pre-turn items that sit immediately above
-    /// that boundary.
-    ///
-    /// If any trimmed developer message was a mixed `build_initial_context` bundle containing both
-    /// rollback-trimmable contextual fragments and persistent developer text, this also clears the
-    /// stored `reference_context_item` baseline so the next real turn falls back to full
-    /// reinjection.
     fn is_code_mode_exec_output(&self, call_id: &str, output_name: Option<&str>) -> bool {
         const CODE_MODE_EXEC_TOOL_NAME: &str = "exec";
 
@@ -1236,6 +1219,23 @@ impl ContextManager {
         })
     }
 
+    /// Walk backward from a rollback cut and trim contiguous pre-turn context-update items.
+    ///
+    /// Returns the adjusted cut index after removing contextual developer/user items immediately
+    /// above the rolled-back turn boundary.
+    ///
+    /// `first_instruction_turn_idx` is the earliest rollback-eligible instruction-turn boundary
+    /// in `snapshot`; the trim walk never crosses it so any session-prefix items that predate the
+    /// first real turn survive rollback.
+    ///
+    /// `cut_idx` is the tentative slice boundary after dropping the requested number of
+    /// instruction turns, before stripping contextual pre-turn items that sit immediately above
+    /// that boundary.
+    ///
+    /// If any trimmed developer message was a mixed `build_initial_context` bundle containing both
+    /// rollback-trimmable contextual fragments and persistent developer text, this also clears the
+    /// stored `reference_context_item` baseline so the next real turn falls back to full
+    /// reinjection.
     fn trim_pre_turn_context_updates(
         &mut self,
         snapshot: &[ResponseItemEnvelope],

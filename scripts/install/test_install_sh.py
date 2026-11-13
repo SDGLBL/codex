@@ -171,7 +171,6 @@ class InstallShTest(unittest.TestCase):
             )
             self.assertTrue(os.access(host_path, os.X_OK))
 
-<<<<<<< HEAD
     def test_noninteractive_install_warns_about_existing_npm_codex(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -192,7 +191,6 @@ class InstallShTest(unittest.TestCase):
             self.assertIn(
                 "Leaving the existing npm-managed Codex installed", result.stderr
             )
-=======
     def test_internal_raw_release_keeps_companion_archive_distinct(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -215,7 +213,6 @@ class InstallShTest(unittest.TestCase):
             self.assertTrue(os.access(install_bin / "codex", os.X_OK))
             self.assertTrue(os.access(install_bin / "codex-code-mode-host", os.X_OK))
             self.assertTrue(os.access(install_bin / "rg", os.X_OK))
->>>>>>> abc041daed (fix(installer): preserve internal companion archive path)
 
     def test_internal_raw_install_produces_a_complete_daemon_source_package(
         self,
