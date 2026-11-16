@@ -1989,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "codex-agent-message-board-host"
-version = "0.0.0"
+version = "0.168.0"
 dependencies = [
  "chrono",
  "codex-agent-message-board-client",
@@ -5561,7 +5561,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-model-facing-id"
-version = "0.0.0"
+version = "0.168.0"
 dependencies = [
  "blake3",
  "pretty_assertions",
