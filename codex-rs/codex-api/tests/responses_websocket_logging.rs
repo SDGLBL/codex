@@ -150,6 +150,7 @@ async fn connector_results_reach_websocket_without_payload_logs() -> Result<()> 
         prompt_cache_key: None,
         prompt_cache_options: None,
         text: None,
+        max_output_tokens: None,
         generate: None,
         client_metadata: None,
         access_programs: None,

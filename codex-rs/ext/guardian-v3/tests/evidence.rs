@@ -54,6 +54,7 @@ async fn captures_originals_without_generated_context_or_later_appends() -> anyh
             creator_account_id: None,
             session_id: owner.into(),
             thread_id: owner,
+            wire_session_id: owner,
             extra_config: None,
             forked_from_id: None,
             parent_thread_id: None,

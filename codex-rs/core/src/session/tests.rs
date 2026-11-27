@@ -6772,17 +6772,18 @@ async fn captured_compaction_window_preserves_wire_session_identity() {
         .await
         .session_configuration
         .wire_session_id = Some(wire_session_id);
-    let context_window_id = uuid::Uuid::new_v4();
+    let step_context = StepContext::for_test(Arc::new(turn_context));
+    let context_window_id = codex_protocol::ContextWindowId::new_uuid_v7();
     let metadata = session
         .compaction_responses_metadata_for_window(
-            &turn_context,
+            &step_context,
             CompactionTurnMetadata::new(
                 CompactionTrigger::Auto,
                 CompactionReason::ContextLimit,
                 CompactionImplementation::Responses,
                 CompactionPhase::MidTurn,
             ),
-            ("captured-window".to_string(), 7, context_window_id),
+            ("captured-window".to_string(), 7, context_window_id.clone()),
         )
         .await;
 

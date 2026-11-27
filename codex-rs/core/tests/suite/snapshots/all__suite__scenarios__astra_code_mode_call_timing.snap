@@ -6,7 +6,7 @@ Scenario: Astra reads code-mode timings and the collector notice even at zero to
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=a7c46a0959d54866):
+00:additional_tools/developer (3; hash=47e5f136f2cabf92):
         - namespace/functions; hash=81846de5bc4e7474
           - custom/exec
           - function/wait
@@ -14,7 +14,7 @@ Scenario: Astra reads code-mode timings and the collector notice even at zero to
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=a097b9364047b8bb
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=d9167b978701c347
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents

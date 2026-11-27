@@ -15,13 +15,13 @@ Settings:
   stream: true
   tool_choice: "auto"
 -- request 1 (request) --
-00:additional_tools/developer (2; hash=ba09b4f2f05f1575):
+00:additional_tools/developer (2; hash=be46e6b7cb8739cb):
         - namespace/functions; hash=3fd5e7004553e7b9
           - function/exec_command
           - function/write_stdin
           - function/request_user_input
           - function/view_image
-        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=c826e5b07fd2820f
+        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=7428bd8d80aed473
           - function/close_agent
           - function/resume_agent
           - function/send_input
@@ -54,13 +54,13 @@ Settings:
 Settings: relative to window 1
   model: "catalog-writable-roots-b"
 -- request 2 (request) --
-00:additional_tools/developer (2; hash=ba09b4f2f05f1575):
+00:additional_tools/developer (2; hash=be46e6b7cb8739cb):
         - namespace/functions; hash=3fd5e7004553e7b9
           - function/exec_command
           - function/write_stdin
           - function/request_user_input
           - function/view_image
-        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=c826e5b07fd2820f
+        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=7428bd8d80aed473
           - function/close_agent
           - function/resume_agent
           - function/send_input
