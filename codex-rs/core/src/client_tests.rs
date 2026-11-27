@@ -1747,6 +1747,30 @@ fn chatgpt_provider_keeps_inherited_cache_routing_with_separate_wire_session() {
 }
 
 #[test]
+fn chatgpt_provider_with_custom_endpoint_uses_session_id_routing() {
+    let mut client = test_model_client(SessionSource::Cli);
+    Arc::get_mut(&mut client.state)
+        .expect("test client should have unique session state")
+        .provider = create_model_provider(
+        ModelProviderInfo::create_openai_provider(Some("https://example.com/v1".to_string())),
+        Some(AuthManager::from_auth_for_testing(
+            CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        )),
+    );
+    client.session_id_override = Some("parent-cache".to_string());
+    let mut metadata = test_responses_metadata_for_client(
+        &client,
+        Some("turn-123"),
+        "window-1".to_string(),
+        /*parent_thread_id*/ None,
+        TestCodexResponsesRequestKind::Turn,
+    );
+    metadata.wire_session_id = "persisted-wire-session".to_string();
+
+    assert_eq!(client.responses_session_id(&metadata), metadata.session_id);
+}
+
+#[test]
 fn build_subagent_headers_sets_internal_memory_consolidation_label() {
     let client = test_model_client(SessionSource::Internal(
         InternalSessionSource::MemoryConsolidation,

@@ -821,9 +821,14 @@ impl ModelClient {
         let auth = self
             .auth_manager()
             .and_then(|manager| manager.auth_cached());
-        if !self.uses_codex_backend(auth.as_ref())
-            || !self.state.provider.info().supports_codex_backend_routes()
-        {
+        if !self.state.provider.info().supports_codex_backend_routes() {
+            return if auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth) {
+                metadata.session_id.clone()
+            } else {
+                metadata.wire_session_id.clone()
+            };
+        }
+        if !self.uses_codex_backend(auth.as_ref()) {
             return metadata.wire_session_id.clone();
         }
         if self.state.session_source.is_non_root_agent() {
